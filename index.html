@@ -52,6 +52,9 @@
     // ------------------------------------------------------------
     let currentScale = 1;
 
+    // Variables for background panning with touch
+    let lastTouchX = null, lastTouchY = null;
+
     // ------------------------------------------------------------
     // Canvas Setup
     // ------------------------------------------------------------
@@ -583,8 +586,8 @@
       ctx.fillRect(0, 0, surface_width, surface_height);
 
       const tile_width = 50, tile_height = 50;
-      for (let y = 0; y < surface_height; y += tile_height) {
-        for (let x = 0; x < surface_width; x += tile_width) {
+      for (let y = 0; y < surface_height; y += tile_width) {
+        for (let x = 0; x < surface_width; x += tile_height) {
           // For each tile, pick a random colour from the palette
           let col = colors[Math.floor(Math.random() * colors.length)];
           ctx.fillStyle = "rgb(" + col.join(",") + ")";
@@ -1251,7 +1254,7 @@
     });
 
     // ------------------------------------------------------------
-    // Touch Event Handling (mirroring mouse events)
+    // Touch Event Handling (mirroring mouse events, with BG move support)
     // ------------------------------------------------------------
     canvas.addEventListener("touchstart", function(e) {
       e.preventDefault();
@@ -1260,18 +1263,20 @@
       const mouseX = (touch.clientX - rect.left) / currentScale;
       const mouseY = (touch.clientY - rect.top) / currentScale;
 
-      // Use the same logic as mousedown
+      // Check toggle border button.
       if (mouseX >= toggleBorderButton.x && mouseX <= toggleBorderButton.x + toggleBorderButton.w &&
           mouseY >= toggleBorderButton.y && mouseY <= toggleBorderButton.y + toggleBorderButton.h) {
         toggleBorderOn = !toggleBorderOn;
         return;
       }
+      // Check toggle drag button.
       if (mouseX >= toggleDragButton.x && mouseX <= toggleDragButton.x + toggleDragButton.w &&
           mouseY >= toggleDragButton.y && mouseY <= toggleDragButton.y + toggleDragButton.h) {
         toggleDragEnabled = !toggleDragEnabled;
         toggleDragButton.label = toggleDragEnabled ? "BG Move On" : "BG Move Off";
         return;
       }
+      // Pattern switch buttons.
       for (let btn of switchButtons) {
         if (mouseX >= btn.x && mouseX <= btn.x + btn.w &&
             mouseY >= btn.y && mouseY <= btn.y + btn.h) {
@@ -1279,11 +1284,13 @@
           return;
         }
       }
+      // Reset background button.
       if (mouseX >= resetBgButton.x && mouseX <= resetBgButton.x + resetBgButton.w &&
           mouseY >= resetBgButton.y && mouseY <= resetBgButton.y + resetBgButton.h) {
         backgroundX = 0; backgroundY = 0;
         return;
       }
+      // Colour swatches.
       for (let i = 0; i < swatchPositions.length; i++) {
         let pos = swatchPositions[i];
         if (mouseX >= pos.x && mouseX <= pos.x + swatchWidth &&
@@ -1293,26 +1300,31 @@
           return;
         }
       }
+      // Reset button (clear circles).
       if (mouseX >= resetButton.x && mouseX <= resetButton.x + resetButton.w &&
           mouseY >= resetButton.y && mouseY <= resetButton.y + resetButton.h) {
         circleInstances = [];
         return;
       }
+      // Save button (save only main area).
       if (mouseX >= saveButton.x && mouseX <= saveButton.x + saveButton.w &&
           mouseY >= saveButton.y && mouseY <= saveButton.y + saveButton.h) {
         saveMainImage();
         return;
       }
+      // Random button (add circles).
       if (mouseX >= randomButton.x && mouseX <= randomButton.x + randomButton.w &&
           mouseY >= randomButton.y && mouseY <= randomButton.y + randomButton.h) {
         addRandomCircles();
         return;
       }
+      // Background button (new pattern).
       if (mouseX >= backgroundButton.x && mouseX <= backgroundButton.x + backgroundButton.w &&
           mouseY >= backgroundButton.y && mouseY <= backgroundButton.y + backgroundButton.h) {
         createNewPattern();
         return;
       }
+      // Check initial preset circles.
       let found = false;
       function checkInitial(pos, size) {
         const dx = mouseX - pos.x, dy = mouseY - pos.y;
@@ -1328,6 +1340,7 @@
         if (!found) arr.forEach(pos => { if (!found) checkInitial(pos, (arr === initialSmallCirclePositions) ? smallCircleRadius : (arr === initialMediumCirclePositions ? Math.floor(circleRadius * 0.75) : circleRadius)); });
       });
       if (found) return;
+      // Check existing circles.
       for (let i = circleInstances.length - 1; i >= 0; i--) {
         const circle = circleInstances[i];
         const dx = mouseX - circle.pos.x, dy = mouseY - circle.pos.y;
@@ -1339,9 +1352,12 @@
           return;
         }
       }
+      // If BG move is enabled, start dragging background and record the starting touch.
       if (toggleDragEnabled) {
         dragging = true;
         draggedItem = null;
+        lastTouchX = mouseX;
+        lastTouchY = mouseY;
       }
     }, {passive: false});
 
@@ -1356,8 +1372,15 @@
           draggedItem.pos.x = mouseX - offsetX;
           draggedItem.pos.y = mouseY - offsetY;
         } else if (toggleDragEnabled) {
-          backgroundX += 0;
-          backgroundY += 0;
+          // Compute movement delta using last recorded touch positions.
+          if (lastTouchX !== null && lastTouchY !== null) {
+            let deltaX = mouseX - lastTouchX;
+            let deltaY = mouseY - lastTouchY;
+            backgroundX += deltaX;
+            backgroundY += deltaY;
+          }
+          lastTouchX = mouseX;
+          lastTouchY = mouseY;
         }
       }
     }, {passive: false});
@@ -1377,6 +1400,8 @@
       }
       dragging = false;
       draggedItem = null;
+      lastTouchX = null;
+      lastTouchY = null;
     }, {passive: false});
 
     window.addEventListener("keydown", function (e) {
