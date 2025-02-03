@@ -687,7 +687,7 @@
       const background_colors = dark_greys.concat(dark_greens, dark_blues);
       const background_color = background_colors[Math.floor(Math.random() * background_colors.length)];
       create_noise_background(background_color, 5, 1);
-      const abts_palette = [
+      const a_palette = [
         [89, 79, 191],
         [204, 119, 34],
         [102, 153, 204],
@@ -696,7 +696,7 @@
         [156, 105, 38],
         [76, 153, 0]
       ];
-      const triangle_color = abts_palette[Math.floor(Math.random() * abts_palette.length)];
+      const triangle_color = a_palette[Math.floor(Math.random() * a_palette.length)];
       draw_fullscreen_triangles(triangle_color);
       return canvas;
     }
