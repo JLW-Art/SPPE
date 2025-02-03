@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <!-- Viewport meta tag ensures mobile devices display the page at the device width -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sticker Pack Picture Editor</title>
   <style>
     /* Remove default margins and allow scrolling if needed */
@@ -1353,10 +1355,8 @@
           draggedItem.pos.x = mouseX - offsetX;
           draggedItem.pos.y = mouseY - offsetY;
         } else if (toggleDragEnabled) {
-          // Note: e.changedTouches is not available in touchmove, so we use the movement delta from our last event if needed.
-          // For simplicity, we approximate by updating the background based on touch movement.
-          // (Alternatively, track previous position in a variable.)
-          backgroundX += 0; // Alternatively, implement smooth panning
+          // For simplicity, panning is not dynamically adjusted on touchmove.
+          backgroundX += 0;
           backgroundY += 0;
         }
       }
@@ -1454,13 +1454,15 @@
     });
 
     // ------------------------------------------------------------
-    // Scale the canvas to fit the window height (if tall enough)
-    // and update the global currentScale variable.
+    // Scale the canvas to fit the screen on mobile devices.
+    // The scale factor is computed based on both width and height.
     // ------------------------------------------------------------
     function scaleCanvas() {
-      // Calculate the scale factor based on window height relative to the design height.
-      const scale = window.innerHeight / DESIGN_HEIGHT;
-      currentScale = scale < 1 ? 1 : scale;
+      const scaleX = window.innerWidth / DESIGN_WIDTH;
+      const scaleY = window.innerHeight / DESIGN_HEIGHT;
+      // Use the smaller scale factor to ensure the entire design is visible
+      const scale = Math.min(scaleX, scaleY);
+      currentScale = scale;
       canvas.style.transform = 'scale(' + currentScale + ')';
       // Set the transform origin so that the canvas remains top left (container handles centring)
       canvas.style.transformOrigin = 'top left';
