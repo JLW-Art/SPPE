@@ -1,1 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sticker Pack Picture Editor</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #333; width: 100vw; height: 100vh; overflow: auto; }
+    .canvas-container { display: flex; align-items: flex-start; justify-content: center; height: 100%; }
+    canvas { display: block; background: #000; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+  </style>
+</head>
+<body>
+  <div class="canvas-container">
+    <canvas id="gameCanvas" width="681" height="840"></canvas>
+  </div>
+  <script>
+    document.oncontextmenu = function() { return false; };
+    const DESIGN_WIDTH = 681, DESIGN_HEIGHT = 840, SIDEBAR_WIDTH = 249, MAIN_AREA_WIDTH = DESIGN_WIDTH - SIDEBAR_WIDTH;
+    let currentScale = 1;
+    const canvas = document.getElementById("gameCanvas"), ctx = canvas.getContext("2d");
+    function drawRoundedRect(x, y, w, h, rTL, rTR, rBR, rBL) { ctx.beginPath(); ctx.moveTo(x + rTL, y); ctx.lineTo(x + w - rTR, y); ctx.quadraticCurveTo(x + w, y, x + w, y + rTR); ctx.lineTo(x + w, y + h - rBR); ctx.quadraticCurveTo(x + w, y + h, x + w - rBR, y + h); ctx.lineTo(x + rBL, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - rBL); ctx.lineTo(x, y + rTL); ctx.quadraticCurveTo(x, y, x + rTL, y); ctx.closePath(); ctx.fill(); }
+    let backgroundX = 0, backgroundY = 0, toggleDragEnabled = false, toggleBorderOn = true, currentSwatchIndex = 0, selectedColor = "rgb(0,0,0)";
+    let circleInstances = [], dragging = false, draggedItem = null, offsetX = 0, offsetY = 0;
+    const circleRadius = 50, smallCircleRadius = Math.floor(circleRadius / 3),
+      initialCirclePositions = [{ x: DESIGN_WIDTH - 190, y: 350 }],
+      initialMediumCirclePositions = [{ x: DESIGN_WIDTH - 92, y: 350 }],
+      initialSmallCirclePositions = [{ x: DESIGN_WIDTH - 30, y: 350 }];
+    const colorSwatches = [
+      [255, 0, 0], [255, 102, 102], [204, 0, 0], [255, 128, 128],
+      [255, 165, 0], [255, 178, 102], [255, 128, 0],
+      [255, 255, 0], [255, 255, 102], [204, 204, 0], [255, 255, 128],
+      [0, 255, 0], [102, 255, 102], [0, 204, 0], [128, 255, 128],
+      [0, 255, 255], [0, 128, 128], [102, 255, 255], [0, 204, 204],
+      [0, 0, 255], [102, 178, 255], [0, 128, 255], [128, 128, 255],
+      [102, 102, 255], [51, 51, 153], [128, 0, 128], [178, 102, 255], [102, 0, 204],
+      [255, 0, 255], [255, 192, 203], [255, 153, 204], [255, 102, 178],
+      [165, 42, 42], [128, 128, 0], [128, 128, 64], [64, 128, 128],
+      [255, 255, 255], [0, 0, 0], [192, 192, 192], [160, 160, 160],
+      [128, 128, 128], [96, 96, 96], [64, 64, 64], [32, 32, 32], [16, 16, 16],
+      [224, 224, 224], [128, 128, 160]
+    ];
+    const swatchWidth = 30, swatchHeight = 30; let swatchPositions = [];
+    const rows = 9, cols = 6;
+    for (let i = 0; i < colorSwatches.length; i++) {
+      let row = Math.floor(i / cols), col = i % cols,
+          x = DESIGN_WIDTH - 215 + col * (swatchWidth + 1),
+          y = 20 + row * (swatchHeight + 1);
+      swatchPositions.push({ x, y });
+    }
+    const resetButton = { x: DESIGN_WIDTH - 120, y: DESIGN_HEIGHT - 110, w: 50, h: 50, colour: "rgb(100,100,100)", label: "RC" },
+          resetBgButton = { x: DESIGN_WIDTH - 70, y: DESIGN_HEIGHT - 110, w: 50, h: 50, colour: "rgb(100,100,100)", label: "RBG" },
+          deleteButton = { x: DESIGN_WIDTH - 230, y: DESIGN_HEIGHT - 210, w: 100, h: 180, colour: "rgb(100,100,100)", label: "Delete" },
+          randomButton = { x: DESIGN_WIDTH - 120, y: DESIGN_HEIGHT - 210, w: 100, h: 50, colour: "rgb(100,100,100)", label: "Random" },
+          saveButton = { x: DESIGN_WIDTH - 120, y: DESIGN_HEIGHT - 60, w: 100, h: 50, colour: "rgb(100,100,100)", label: "Save" },
+          backgroundButton = { x: DESIGN_WIDTH - 120, y: DESIGN_HEIGHT - 160, w: 100, h: 50, colour: "rgb(100,100,100)", label: "New BG" };
+    let switchButtons = [];
+    const firstColumnX = DESIGN_WIDTH - 230, secondColumnX = DESIGN_WIDTH - 120, baseY = DESIGN_HEIGHT - 420;
+    for (let i = 1; i <= 13; i++) {
+      let col = (i % 2 === 1) ? firstColumnX : secondColumnX,
+          index = Math.floor((i - 1) / 2),
+          y = baseY + index * 25;
+      switchButtons.push({ x: col, y: y, w: 100, h: 20, colour: "rgb(100,100,100)", label: "Pattern " + i, patternNumber: i });
+    }
+    const toggleDragButton = { x: DESIGN_WIDTH - 120, y: DESIGN_HEIGHT - 260, w: 100, h: 50, colour: "rgb(100,100,100)", label: "BG Move Off" },
+          toggleBorderButton = { x: 470, y: 810, w: 80, h: 20, colour: "rgb(100,100,100)", label: "Border On" };
+    function drawTitle() {
+      ctx.font = "12px monospace";
+      ctx.fillStyle = "grey";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillText("SPPE by JLW", DESIGN_WIDTH - SIDEBAR_WIDTH / 2, 5);
+    }
 
+    function Pattern1(low_width, low_height) {
+      let offCanvas = document.createElement("canvas");
+      offCanvas.width = low_width;
+      offCanvas.height = low_height;
+      let offCtx = offCanvas.getContext("2d");
+      let imageData = offCtx.createImageData(low_width, low_height);
+      let phase1 = Math.random() * 5 * Math.PI;
+      let phase2 = Math.random() * 5 * Math.PI;
+      let freq1 = Math.random() * (8 - 1) + 1;
+      let freq2 = Math.random() * (8 - 1) + 1;
+      let amp1 = Math.random() * (0.5 - 0.01) + 0.01;
+      let amp2 = Math.random() * (0.5 - 0.01) + 0.01;
+      // Generate two random colours
+      const colour1 = [Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256)];
+      const colour2 = [Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256)];
+      const rArray = new Float32Array(low_width * low_height);
+      let index = 0, max_r = 0;
+      for (let i = 0; i < low_height; i++) {
+        let y = -1 + 2 * i / (low_height - 1);
+        for (let j = 0; j < low_width; j++) {
+          let x = -1 + 2 * j / (low_width - 1);
+          let r = Math.sqrt(x * x + y * y);
+          let theta = Math.atan2(y, x);
+          r += amp1 * Math.sin(freq1 * theta + phase1);
+          r += amp2 * Math.sin(freq2 * theta + phase2);
+          rArray[index] = r;
+          if (r > max_r) max_r = r;
+          index++;
+        }
+      }
+      index = 0;
+      for (let i = 0; i < low_height; i++) {
+        for (let j = 0; j < low_width; j++) {
+          let t = Math.min(Math.max(rArray[index] / max_r, 0), 1);
+          let colour = (t < 0.5) ? colour1 : colour2;
+          let pixelIndex = index * 4;
+          imageData.data[pixelIndex] = colour[0];
+          imageData.data[pixelIndex + 1] = colour[1];
+          imageData.data[pixelIndex + 2] = colour[2];
+          imageData.data[pixelIndex + 3] = 255;
+          index++;
+        }
+      }
+      offCtx.putImageData(imageData, 0, 0);
+      return offCanvas;
+    }
+
+
+    function Pattern2(low_width, low_height) {
+      let canvas = document.createElement("canvas");
+      canvas.width = low_width;
+      canvas.height = low_height;
+      let ctx = canvas.getContext("2d");
+      const numLayers = 4;
+      // Generate random colours for each layer
+      const colours = [];
+      for (let i = 0; i < numLayers; i++) {
+        colours.push([Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256)]);
+      }
+      const rArr = new Float32Array(low_width * low_height);
+      const gArr = new Float32Array(low_width * low_height);
+      const bArr = new Float32Array(low_width * low_height);
+      for (let layer = 0; layer < numLayers; layer++) {
+        let phase = Math.random() * 2 * Math.PI;
+        let freq = Math.random() * (0.091 - 0.02) + 0.02;
+        let index = 0;
+        for (let i = 0; i < low_height; i++) {
+          let wave = Math.sin(2 * freq * i + phase);
+          for (let j = 0; j < low_width; j++) {
+            let checker = (((Math.floor(j / 150)) % 2) + ((Math.floor(i / 50)) % 2)) % 2;
+            checker = checker * 2 - 1;
+            let combined = checker * wave;
+            let normalised = (combined + 1) / 2;
+            rArr[index] = Math.max(rArr[index], colours[layer][0] * normalised);
+            gArr[index] = Math.max(gArr[index], colours[layer][1] * normalised);
+            bArr[index] = Math.max(bArr[index], colours[layer][2] * normalised);
+            index++;
+          }
+        }
+      }
+      let imageData = ctx.createImageData(low_width, low_height);
+      for (let i = 0; i < low_width * low_height; i++) {
+        let idx = i * 4;
+        imageData.data[idx] = Math.round(rArr[i]);
+        imageData.data[idx + 1] = Math.round(gArr[i]);
+        imageData.data[idx + 2] = Math.round(bArr[i]);
+        imageData.data[idx + 3] = 255;
+      }
+      ctx.putImageData(imageData, 0, 0);
+      return canvas;
+    }
+
+
+    function Pattern3(low_width, low_height) {
+      let canvas = document.createElement("canvas");
+      canvas.width = low_width;
+      canvas.height = low_height;
+      let ctx = canvas.getContext("2d");
+      let imageData = ctx.createImageData(low_width, low_height);
+      let phase1 = Math.random() * 2 * Math.PI;
+      let phase2 = Math.random() * 2 * Math.PI;
+      let freq1 = Math.random() * (0.09 - 0.00001) + 0.00001;
+      let freq2 = Math.random() * (0.09 - 0.00001) + 0.00001;
+      // Generate two random colours
+      const colour1 = [Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256)];
+      const colour2 = [Math.floor(Math.random() * 256), Math.floor(Math.random() * 256), Math.floor(Math.random() * 256)];
+      let index = 0;
+      for (let i = 0; i < low_height; i++) {
+        for (let j = 0; j < low_width; j++) {
+          let sine_val = Math.sin(freq1 * i + phase1) * Math.cos(freq1 * j + phase1);
+          let cos_val = Math.cos(freq2 * j + phase2) * Math.sin(freq2 * i + phase2);
+          let pattern = (sine_val + cos_val > 0);
+          let colour = pattern ? colour1 : colour2;
+          let idx = index * 4;
+          imageData.data[idx] = colour[0];
+          imageData.data[idx + 1] = colour[1];
+          imageData.data[idx + 2] = colour[2];
+          imageData.data[idx + 3] = 255;
+          index++;
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+      return canvas;
+    }
+
+    function Pattern4(w, h) {
+      let c = document.createElement("canvas"); c.width = w; c.height = h;
+      let ctx2 = c.getContext("2d"), numLayers = 2, grayArr = new Float32Array(w * h);
+      for (let layer = 0; layer < numLayers; layer++) {
+        let phase = Math.random() * 2 * Math.PI, freq = Math.random() * 0.0499 + 0.0001, idx = 0;
+        let waveTypes = [Math.sin, Math.cos, Math.tan, function(z){ return Math.sign(Math.sin(z)); }];
+        let indices = [];
+        while (indices.length < 2) { let r = Math.floor(Math.random() * waveTypes.length); if (!indices.includes(r)) indices.push(r); }
+        let wave_func1 = waveTypes[indices[0]], wave_func2 = waveTypes[indices[1]];
+        let combined = new Float32Array(w * h), minVal = Infinity, maxVal = -Infinity;
+        for (let i = 0; i < h; i++) {
+          for (let j = 0; j < w; j++) {
+            let val1 = wave_func1(freq * i + phase), val2 = wave_func2(freq * j + phase), comb = val1 + val2;
+            combined[idx] = comb; if (comb < minVal) minVal = comb; if (comb > maxVal) maxVal = comb; idx++;
+          }
+        }
+        idx = 0;
+        for (let i = 0; i < h; i++) {
+          for (let j = 0; j < w; j++) {
+            let normalized = (combined[idx] - minVal) / (maxVal - minVal), intensity = normalized * 255;
+            grayArr[idx] = Math.max(grayArr[idx], intensity); idx++;
+          }
+        }
+      }
+      let imgData = ctx2.createImageData(w, h);
+      for (let i = 0; i < w * h; i++) {
+        let val = Math.round(grayArr[i]), idx = i * 4;
+        imgData.data[idx] = val; imgData.data[idx+1] = val; imgData.data[idx+2] = val; imgData.data[idx+3] = 255;
+      }
+      ctx2.putImageData(imgData, 0, 0);
+      return c;
+    }
+    function Pattern5(w, h) {
+      let c = document.createElement("canvas"); c.width = w; c.height = h;
+      let ctx2 = c.getContext("2d"), numLayers = 4, colors = [[255,0,0],[0,255,0],[0,0,255],[0,255,255]];
+      let rArr = new Float32Array(w * h), gArr = new Float32Array(w * h), bArr = new Float32Array(w * h);
+      for (let layer = 0; layer < numLayers; layer++) {
+        let phase = Math.random() * 2 * Math.PI, freq = Math.random() * 0.005 + 0.005, combined = new Float32Array(w * h), minVal = Infinity, maxVal = -Infinity, idx = 0;
+        for (let i = 0; i < h; i++) {
+          for (let j = 0; j < w; j++) {
+            let val = Math.sin(freq * (j + i) + phase);
+            combined[idx] = val; if(val < minVal) minVal = val; if(val > maxVal) maxVal = val; idx++;
+          }
+        }
+        idx = 0;
+        for (let i = 0; i < h; i++) {
+          for (let j = 0; j < w; j++) {
+            let normalized = (combined[idx] - minVal) / (maxVal - minVal);
+            rArr[idx] = Math.max(rArr[idx], colors[layer][0] * normalized);
+            gArr[idx] = Math.max(gArr[idx], colors[layer][1] * normalized);
+            bArr[idx] = Math.max(bArr[idx], colors[layer][2] * normalized);
+            idx++;
+          }
+        }
+      }
+      let imgData = ctx2.createImageData(w, h);
+      for (let i = 0; i < w * h; i++) {
+        let idx = i * 4;
+        imgData.data[idx] = Math.round(rArr[i]);
+        imgData.data[idx+1] = Math.round(gArr[i]);
+        imgData.data[idx+2] = Math.round(bArr[i]);
+        imgData.data[idx+3] = 255;
+      }
+      ctx2.putImageData(imgData, 0, 0);
+      return c;
+    }
+    function Pattern6(w, h, num_curves = 4) {
+      let c = document.createElement("canvas"); c.width = w; c.height = h;
+      let ctx2 = c.getContext("2d"), imgData = ctx2.createImageData(w, h),
+          colour1 = [Math.floor(Math.random()*256), Math.floor(Math.random()*256), Math.floor(Math.random()*256)],
+          colour2 = [Math.floor(Math.random()*256), Math.floor(Math.random()*256), Math.floor(Math.random()*256)],
+          A = w/2, B = h/2, x_coords = new Float32Array(w), y_coords = new Float32Array(h);
+      for (let j = 0; j < w; j++) x_coords[j] = -A + (2 * A * j) / (w - 1);
+      for (let i = 0; i < h; i++) y_coords[i] = -B + (2 * B * i) / (h - 1);
+      let count_above = new Uint8Array(w * h);
+      for (let k = 0; k < num_curves; k++) {
+        let a = Math.random() * 4 + 1, b = Math.random() * 4 + 1, delta = Math.random() * 2 * Math.PI;
+        for (let j = 0; j < w; j++) {
+          let t = Math.asin(x_coords[j] / A) / a - delta, y_lissajous = B * Math.sin(b * t);
+          for (let i = 0; i < h; i++) {
+            let idx = i * w + j;
+            if (y_coords[i] < y_lissajous) count_above[idx]++;
+          }
+        }
+      }
+      let idx = 0;
+      for (let i = 0; i < h; i++) {
+        for (let j = 0; j < w; j++) {
+          let col = (count_above[idx] % 2 === 0) ? colour1 : colour2, p = idx * 4;
+          imgData.data[p] = col[0];
+          imgData.data[p+1] = col[1];
+          imgData.data[p+2] = col[2];
+          imgData.data[p+3] = 255;
+          idx++;
+        }
+      }
+      ctx2.putImageData(imgData, 0, 0);
+      return c;
+    }
+    function Pattern7(w, h, num_curves = 4) {
+      let c = document.createElement("canvas"); c.width = w; c.height = h;
+      let ctx2 = c.getContext("2d"), imgData = ctx2.createImageData(w, h),
+          colour1 = [Math.floor(Math.random()*256), Math.floor(Math.random()*256), Math.floor(Math.random()*256)],
+          colour2 = [Math.floor(Math.random()*256), Math.floor(Math.random()*256), Math.floor(Math.random()*256)],
+          A = w/2, B = h/2, x_coords = new Float32Array(w), y_coords = new Float32Array(h);
+      for (let j = 0; j < w; j++) x_coords[j] = -A + (2 * A * j) / (w - 1);
+      for (let i = 0; i < h; i++) y_coords[i] = -B + (2 * B * i) / (h - 1);
+      let count_above = new Uint8Array(w * h);
+      for (let k = 0; k < num_curves; k++) {
+        let a = Math.random() * 4 + 1, b = Math.random() * 4 + 1, delta = Math.random() * 2 * Math.PI;
+        for (let j = 0; j < w; j++) {
+          let t = Math.asin(Math.max(-1, Math.min(1, x_coords[j] / A))) / a - delta, y_lissajous = B * Math.sin(b * t);
+          for (let i = 0; i < h; i++) {
+            let idx = i * w + j;
+            if (y_coords[i] < y_lissajous) count_above[idx]++;
+          }
+        }
+      }
+      let gradient = new Float32Array(h), inverted_gradient = new Float32Array(h);
+      for (let i = 0; i < h; i++) { let val = i/(h-1); gradient[i] = val; inverted_gradient[i] = 1-val; }
+      let idx = 0;
+      for (let i = 0; i < h; i++) {
+        for (let j = 0; j < w; j++) {
+          let factor = (count_above[idx] % 2 === 0) ? inverted_gradient[i] : gradient[i],
+              r = Math.round(colour1[0]*(1-factor)+colour2[0]*factor),
+              g = Math.round(colour1[1]*(1-factor)+colour2[1]*factor),
+              b = Math.round(colour1[2]*(1-factor)+colour2[2]*factor),
+              p = idx * 4;
+          imgData.data[p] = r; imgData.data[p+1] = g; imgData.data[p+2] = b; imgData.data[p+3] = 255;
+          idx++;
+        }
+      }
+      ctx2.putImageData(imgData, 0, 0);
+      return c;
+    }
+    function Pattern8(w, h) {
+      let c = document.createElement("canvas"); c.width = w; c.height = h;
+      let ctx2 = c.getContext("2d"),
+          bgRGB = [Math.floor(Math.random()*256), Math.floor(Math.random()*256), Math.floor(Math.random()*256)],
+          fgRGB = [Math.floor(Math.random()*256), Math.floor(Math.random()*256), Math.floor(Math.random()*256)],
+          bgColour = "rgb(" + bgRGB.join(",") + ")", fgColour = "rgb(" + fgRGB.join(",") + ")";
+      ctx2.fillStyle = bgColour; ctx2.fillRect(0,0,w,h);
+      const cell_size = 120, cols = Math.floor(w / cell_size), rows = Math.floor(h / cell_size);
+      function draw_wave_fragment(x, y, ww, hh) {
+        let waveCanvas = document.createElement("canvas"); waveCanvas.width = ww; waveCanvas.height = hh;
+        let waveCtx = waveCanvas.getContext("2d");
+        waveCtx.fillStyle = bgColour; waveCtx.fillRect(0,0,ww,hh);
+        let freq = Math.random() * 0.15 + 0.05, amp = Math.floor(hh/4), phase = Math.random()*2*Math.PI;
+        waveCtx.fillStyle = fgColour;
+        for (let i = 0; i < ww; i++) { let sine = Math.sin(freq*i+phase), wy = Math.floor(hh/2+sine*amp); waveCtx.beginPath(); waveCtx.arc(i,wy,Math.floor(hh/10),0,2*Math.PI); waveCtx.fill(); }
+        let angles = [0,90,180,270], angle = angles[Math.floor(Math.random()*angles.length)];
+        let rotatedCanvas = document.createElement("canvas");
+        if(angle % 180 === 0){ rotatedCanvas.width = ww; rotatedCanvas.height = hh; }
+        else { rotatedCanvas.width = hh; rotatedCanvas.height = ww; }
+        let rCtx = rotatedCanvas.getContext("2d"); rCtx.translate(rotatedCanvas.width/2, rotatedCanvas.height/2); rCtx.rotate(angle*Math.PI/180); rCtx.drawImage(waveCanvas, -ww/2, -hh/2);
+        let centerX = x + ww/2, centerY = y + hh/2, drawX = centerX - rotatedCanvas.width/2, drawY = centerY - rotatedCanvas.height/2;
+        ctx2.drawImage(rotatedCanvas, drawX, drawY);
+      }
+      for(let col=0; col<cols; col++){ for(let row=0; row<rows; row++){ if(Math.random()>0.2){ let x = col * cell_size, y = row * cell_size; draw_wave_fragment(x,y,cell_size,cell_size); } } }
+      return c;
+    }
+    function Pattern9(w, h) {
+      let c = document.createElement("canvas"); c.width = w; c.height = h;
+      let ctx2 = c.getContext("2d"), colors = [];
+      for(let i=0;i<5;i++) { colors.push([Math.floor(Math.random()*256), Math.floor(Math.random()*256), Math.floor(Math.random()*256)]); }
+      let bgColor = colors[Math.floor(Math.random()*colors.length)];
+      ctx2.fillStyle = "rgb(" + bgColor.join(",") + ")"; ctx2.fillRect(0,0,w,h);
+      const tile_w = 50, tile_h = 50;
+      for(let y=0;y<h;y+=tile_h){ for(let x=0;x<w;x+=tile_w){ let col = colors[Math.floor(Math.random()*colors.length)]; ctx2.fillStyle = "rgb(" + col.join(",") + ")"; ctx2.fillRect(x,y,tile_w,tile_h); } }
+      let offset = 9, chromaticCanvas = document.createElement("canvas"); chromaticCanvas.width = w; chromaticCanvas.height = h;
+      let chromCtx = chromaticCanvas.getContext("2d"); chromCtx.globalCompositeOperation = "screen";
+      let offsets = [-offset,0,offset]; offsets.forEach(off=>{ chromCtx.drawImage(c, off, 0); });
+      for(let y=0;y<w;y+=2){ chromCtx.fillStyle = "rgba(0,0,0,0.5)"; chromCtx.fillRect(0,y,w,1); }
+      return chromaticCanvas;
+    }
+    function Pattern10(w, h) {
+      let c = document.createElement("canvas"); c.width = w; c.height = h;
+      let ctx2 = c.getContext("2d");
+      function adjust_color_brightness(col, factor) { return col.map(c => Math.min(Math.floor(c*factor),255)); }
+      function enlarge_triangle(triangle, scale=1.1) {
+        let centroid = [0,0]; triangle.forEach(pt => { centroid[0]+=pt[0]; centroid[1]+=pt[1]; });
+        centroid[0] /= triangle.length; centroid[1] /= triangle.length;
+        return triangle.map(pt => [centroid[0] + (pt[0]-centroid[0])*scale, centroid[1] + (pt[1]-centroid[1])*scale]);
+      }
+      function draw_triangle_with_shadow_and_noise(triangle, base_color, shadow_offset=[10,10], shadow_color="rgba(0,0,0,0.5)", scale=1.15) {
+        let enlarged = enlarge_triangle(triangle, scale), shadowTriangle = enlarged.map(pt => [pt[0]+shadow_offset[0], pt[1]+shadow_offset[1]]);
+        ctx2.fillStyle = shadow_color; ctx2.beginPath(); ctx2.moveTo(shadowTriangle[0][0], shadowTriangle[0][1]); shadowTriangle.slice(1).forEach(pt => ctx2.lineTo(pt[0], pt[1])); ctx2.closePath(); ctx2.fill();
+        ctx2.fillStyle = "rgb(" + base_color.join(",") + ")"; ctx2.beginPath(); ctx2.moveTo(triangle[0][0], triangle[0][1]); triangle.slice(1).forEach(pt => ctx2.lineTo(pt[0], pt[1])); ctx2.closePath(); ctx2.fill();
+      }
+      function draw_fullscreen_triangles(base_color) {
+        const W = w, H = h; let div_points = [];
+        for(let i=0;i<3;i++){ div_points.push(Math.floor(Math.random()*(H-1)+1)); } div_points.sort((a,b)=>a-b); div_points = [0].concat(div_points).concat([H]);
+        let triangle_tips = []; for(let i=0;i<3;i++){ triangle_tips.push(Math.floor(Math.random()*(W-1)+1)); }
+        let triangles = [];
+        for(let i=0;i<3;i++){
+          const top_y = div_points[i], mid_y = div_points[i+1], bot_y = div_points[i+2], tip_x = triangle_tips[i];
+          triangles.push([[0, top_y], [tip_x, mid_y], [0, bot_y]]);
+          triangles.push([[W, top_y], [tip_x, mid_y], [W, bot_y]]);
+        }
+        triangles.sort((a,b)=>((a[0][1]+a[1][1]+a[2][1])/3)-((b[0][1]+b[1][1]+b[2][1])/3));
+        triangles.forEach(tri => { let avg_y = (tri[0][1]+tri[1][1]+tri[2][1])/3, brightness = 0.5+0.5*(avg_y/H), col = adjust_color_brightness(base_color, brightness); draw_triangle_with_shadow_and_noise(tri, col); });
+      }
+      function create_noise_background(base_color, intensity=10, alpha=0.2) {
+        ctx2.fillStyle = "rgb(" + base_color.join(",") + ")"; ctx2.fillRect(0,0,w,h);
+        let imgData = ctx2.getImageData(0,0,w,h);
+        for(let i=0;i<imgData.data.length;i+=4){ let noise = Math.floor((Math.random()-0.5)*intensity); imgData.data[i] = Math.min(255, Math.max(0, imgData.data[i]+noise)); imgData.data[i+1] = Math.min(255, Math.max(0, imgData.data[i+1]+noise)); imgData.data[i+2] = Math.min(255, Math.max(0, imgData.data[i+2]+noise)); }
+        ctx2.putImageData(imgData,0,0);
+      }
+      const dark_greys = [[20,20,20],[30,30,30],[40,40,40]],
+            dark_greens = [[50,100,50],[0,60,20],[0,70,30]],
+            dark_blues = [[50,50,50],[50,50,60],[20,20,70]],
+            background_colors = dark_greys.concat(dark_greens,dark_blues),
+            background_color = background_colors[Math.floor(Math.random()*background_colors.length)];
+      create_noise_background(background_color,5,1);
+      const abts_palette = [[89,79,191],[204,119,34],[102,153,204],[129,97,131],[217,145,157],[156,105,38],[76,153,0]],
+            triangle_color = abts_palette[Math.floor(Math.random()*abts_palette.length)];
+      draw_fullscreen_triangles(triangle_color);
+      return c;
+    }
+    function Pattern11(w, h) {
+      let c = document.createElement("canvas"); c.width = w; c.height = h;
+      let ctx2 = c.getContext("2d"), rule_number = Math.floor(Math.random()*256),
+          rule = rule_number.toString(2).padStart(8,'0'), reversedRule = rule.split("").reverse().join(""), rule_dict = {};
+      for(let i=0;i<8;i++){ let key = i.toString(2).padStart(3,'0'); rule_dict[key] = reversedRule[i]; }
+      let current_row = [];
+      for(let x=0;x<w;x++){ current_row.push(Math.random()<0.5?'0':'1'); }
+      for(let y=0;y<h;y++){
+        for(let x=0;x<w;x++){
+          ctx2.fillStyle = current_row[x]==='1'?"black":"white";
+          ctx2.fillRect(x,y,1,1);
+        }
+        let next_row = [];
+        for(let x=0;x<w;x++){
+          let left = x-1>=0 ? current_row[x-1] : '0', center = current_row[x], right = x+1<w ? current_row[x+1] : '0',
+              neighbourhood = left+center+right, next_cell = rule_dict[neighbourhood]||'0';
+          next_row.push(next_cell);
+        }
+        current_row = next_row;
+      }
+      let offset = Math.floor(Math.random()*5)+1, chromaticCanvas = document.createElement("canvas");
+      chromaticCanvas.width = w; chromaticCanvas.height = h;
+      let chromCtx = chromaticCanvas.getContext("2d");
+      chromCtx.globalCompositeOperation = "screen";
+      let offsets = [-offset,0,offset];
+      offsets.forEach(off=>{ chromCtx.drawImage(c, off, 0); });
+      for(let y=0;y<h;y+=Math.floor(Math.random()*3+2)){
+        chromCtx.fillStyle = "rgba(0,0,0,0.5)";
+        chromCtx.fillRect(0,y,w,1);
+      }
+      return chromaticCanvas;
+    }
+    function Pattern12(w, h) {
+      let c = document.createElement("canvas"); c.width = w; c.height = h;
+      let ctx2 = c.getContext("2d"); ctx2.fillStyle = "black"; ctx2.fillRect(0,0,w,h);
+      const background = [0,0,0], white = [255,255,255], mustard = [227,207,87], coral = [255,127,80], ultramarine = [18,10,143];
+      function get_new_flower_pattern() { let petal = Math.random()<0.5?mustard:(Math.random()<0.5?coral:ultramarine), center = white; return [[background, petal, background],[petal, center, petal],[background, petal, background]]; }
+      function get_flower_pattern() { let choice = Math.floor(Math.random()*3)+1; return choice===1 ? get_new_flower_pattern() : choice===2 ? [[background, white, background],[white, Math.random()<0.5?mustard:(Math.random()<0.5?coral:ultramarine), white],[background, white, background]] : [[mustard, background, mustard],[background, mustard, background],[mustard, background, mustard]]; }
+      function get_4x4_pattern() { let col = Math.random()<0.5?mustard:(Math.random()<0.5?coral:ultramarine), pat = [[0,col,col,0],[col,0,0,col],[col,0,0,col],[0,col,col,0]]; return pat.map(row=>row.map(cell=>cell===col?col:background)); }
+      function draw_pattern(x, y, block, pattern) { for(let i=0;i<pattern.length;i++){ for(let j=0;j<pattern[i].length;j++){ ctx2.fillStyle = "rgb("+pattern[i][j].join(",")+")"; ctx2.fillRect(x+j*block, y+i*block, block, block); } } }
+      const base_grid_spacing = Math.floor(Math.random()*(250-160))+160;
+      for(let y=0;y<h;y+=base_grid_spacing){
+        for(let x=0;x<w;x+=base_grid_spacing){
+          if(Math.random()*10>1){
+            let pat_choice = Math.random()<0.5?"3x3":"4x4", pattern, flower_size;
+            if(pat_choice==="3x3"){ let sizes = [Math.floor(base_grid_spacing/3), Math.floor(base_grid_spacing/4), Math.floor(base_grid_spacing/6)]; flower_size = sizes[Math.floor(Math.random()*sizes.length)]; pattern = get_flower_pattern(); }
+            else { flower_size = Math.floor(base_grid_spacing/4); pattern = get_4x4_pattern(); }
+            let offsetX = x+base_grid_spacing/2 - (pattern[0].length*flower_size)/2,
+                offsetY = y+base_grid_spacing/2 - (pattern.length*flower_size)/2;
+            draw_pattern(offsetX, offsetY, flower_size, pattern);
+          }
+        }
+      }
+      return c;
+    }
+    function Pattern13(w, h) {
+      let c = document.createElement("canvas"); c.width = w; c.height = h;
+      let ctx2 = c.getContext("2d"),
+          bgRGB = [Math.floor(Math.random()*256), Math.floor(Math.random()*256), Math.floor(Math.random()*256)],
+          strokeRGB = [Math.floor(Math.random()*256), Math.floor(Math.random()*256), Math.floor(Math.random()*256)],
+          bgColour = "rgb("+bgRGB.join(",")+")", strokeColour = "rgb("+strokeRGB.join(",")+")";
+      ctx2.fillStyle = bgColour; ctx2.fillRect(0,0,w,h);
+      const base_cell_size = 120, cell_variations = [120,180,340];
+      function draw_wave_fragment(x,y,ww,hh,angle, max_thickness=12) {
+        let waveCanvas = document.createElement("canvas"); waveCanvas.width = ww; waveCanvas.height = hh;
+        let waveCtx = waveCanvas.getContext("2d"); waveCtx.fillStyle = bgColour; waveCtx.fillRect(0,0,ww,hh);
+        const freqs = [Math.random()*(0.3-0.05)+0.05, Math.random()*(0.3-0.05)+0.05], phase = [Math.random()*2*Math.PI, Math.random()*2*Math.PI],
+              amp = Math.floor(hh/6), points = [];
+        for(let i=0;i<ww;i++){ let sum = 0; for(let k=0;k<freqs.length;k++){ sum += Math.sin(freqs[k]*i+phase[k]); } let sine = sum/freqs.length, wy = Math.floor(hh/2+sine*amp); points.push([i,wy]); }
+        waveCtx.strokeStyle = strokeColour;
+        for(let i=1;i<points.length;i++){ let dynamic = Math.max(1, Math.floor(4+Math.abs(Math.sin(freqs[0]*i+phase[0])*max_thickness))), taper = Math.min(i, points.length-i,20)/20.0, thickness = Math.max(1, Math.floor(dynamic*taper)); waveCtx.lineWidth = thickness; waveCtx.beginPath(); waveCtx.moveTo(points[i-1][0], points[i-1][1]); waveCtx.lineTo(points[i][0], points[i][1]); waveCtx.stroke(); }
+        let rotated = document.createElement("canvas");
+        if(angle % 180 === 0){ rotated.width = ww; rotated.height = hh; } else { rotated.width = hh; rotated.height = ww; }
+        let rCtx = rotated.getContext("2d"); rCtx.translate(rotated.width/2, rotated.height/2); rCtx.rotate(angle*Math.PI/180); rCtx.drawImage(waveCanvas, -ww/2, -hh/2);
+        ctx2.drawImage(rotated, x, y);
+      }
+      let x = 0, y = 0;
+      while(y < h){
+        let cell_size = cell_variations[Math.floor(Math.random()*cell_variations.length)];
+        if(x+cell_size > w || y+cell_size > h){ x = 0; y += cell_size; continue; }
+        let max_var = [8,12,16][Math.floor(Math.random()*3)];
+        if(Math.random()>0.2){ let angle = (((x/base_cell_size)+(y/base_cell_size)) % 4) * 90; draw_wave_fragment(x,y,cell_size,cell_size,angle, max_var); }
+        x += cell_size; if(x>=w){ x = 0; y += cell_size; }
+      }
+      return c;
+    }
+    const patternFunctions = [Pattern1, Pattern2, Pattern3, Pattern4, Pattern5, Pattern6, Pattern7, Pattern8, Pattern9, Pattern10, Pattern11, Pattern12, Pattern13];
+    let currentPatternFunction = patternFunctions[Math.floor(Math.random()*patternFunctions.length)];
+    let checkerboardImg = currentPatternFunction(MAIN_AREA_WIDTH, DESIGN_HEIGHT);
+    function createNewPattern(){ checkerboardImg = currentPatternFunction(MAIN_AREA_WIDTH, DESIGN_HEIGHT); }
+    function switchToPattern(num){ if(num>=1 && num<=patternFunctions.length){ currentPatternFunction = patternFunctions[num-1]; checkerboardImg = currentPatternFunction(MAIN_AREA_WIDTH, DESIGN_HEIGHT); } }
+    function addRandomCircles(){ for(let i=0;i<5;i++){ const sizes = [circleRadius, Math.floor(circleRadius*0.75), smallCircleRadius]; let size = sizes[Math.floor(Math.random()*sizes.length)], col = colorSwatches[Math.floor(Math.random()*colorSwatches.length)], color = "rgb("+col.join(",")+")", x = Math.random()*(MAIN_AREA_WIDTH-size), y = Math.random()*(DESIGN_HEIGHT-size); circleInstances.push({ color, pos: { x, y }, radius: size }); } }
+    function drawColorSwatches(){ for(let i=0;i<colorSwatches.length;i++){ let pos = swatchPositions[i], col = colorSwatches[i]; ctx.fillStyle = "rgb("+col.join(",")+")"; drawRoundedRect(pos.x, pos.y, swatchWidth, swatchHeight, 3, 3, 3, 3); } }
+    function drawButton(btn){ ctx.fillStyle = btn.colour; drawRoundedRect(btn.x, btn.y, btn.w, btn.h, 5, 5, 5, 5); ctx.fillStyle = "rgb(255,255,255)"; ctx.font = "16px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(btn.label, btn.x + btn.w/2, btn.y + btn.h/2); }
+    function drawToggleButton(){ ctx.fillStyle = toggleBorderOn ? "rgb(0,200,0)" : "rgb(100,100,100)"; drawRoundedRect(toggleBorderButton.x, toggleBorderButton.y, toggleBorderButton.w, toggleBorderButton.h, 5, 5, 5, 5); ctx.fillStyle = "rgb(255,255,255)"; ctx.font = "12px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(toggleBorderOn ? "Border On" : "Border Off", toggleBorderButton.x + toggleBorderButton.w/2, toggleBorderButton.y + toggleBorderButton.h/2); }
+    function drawInitialCircles(){ ctx.save(); initialCirclePositions.forEach(pos=>{ ctx.fillStyle = "rgba(43,43,43,1)"; ctx.beginPath(); ctx.arc(pos.x+7, pos.y+7, circleRadius, 0, 2*Math.PI); ctx.fill(); ctx.fillStyle = selectedColor; ctx.beginPath(); ctx.arc(pos.x, pos.y, circleRadius, 0, 2*Math.PI); ctx.fill(); }); initialMediumCirclePositions.forEach(pos=>{ ctx.fillStyle = "rgba(43,43,43,1)"; ctx.beginPath(); ctx.arc(pos.x+7, pos.y+7, Math.floor(circleRadius*0.75), 0, 2*Math.PI); ctx.fill(); ctx.fillStyle = selectedColor; ctx.beginPath(); ctx.arc(pos.x, pos.y, Math.floor(circleRadius*0.75), 0, 2*Math.PI); ctx.fill(); }); initialSmallCirclePositions.forEach(pos=>{ ctx.fillStyle = "rgba(43,43,43,1)"; ctx.beginPath(); ctx.arc(pos.x+7, pos.y+7, smallCircleRadius, 0, 2*Math.PI); ctx.fill(); ctx.fillStyle = selectedColor; ctx.beginPath(); ctx.arc(pos.x, pos.y, smallCircleRadius, 0, 2*Math.PI); ctx.fill(); }); ctx.restore(); }
+    function drawCircles(){ circleInstances.forEach(circle=>{ ctx.fillStyle = circle.color; ctx.beginPath(); ctx.arc(circle.pos.x, circle.pos.y, circle.radius, 0, 2*Math.PI); ctx.fill(); }); }
+    function drawSelectedCircleBorder(circle){ if(toggleBorderOn){ ctx.strokeStyle = "rgb("+colorSwatches[currentSwatchIndex].join(",")+")"; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(circle.pos.x, circle.pos.y, circle.radius+4, 0, 2*Math.PI); ctx.stroke(); } }
+    function drawColorIndicator(){ let pos = { x: 450, y: 810 }, col = colorSwatches[currentSwatchIndex]; ctx.fillStyle = "rgb("+col.join(",")+")"; drawRoundedRect(pos.x, pos.y, 20, 20, 3, 3, 3, 3); ctx.strokeStyle = "rgb(255,255,255)"; ctx.strokeRect(pos.x, pos.y, 20, 20); }
+    function draw(){
+      ctx.clearRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+      ctx.drawImage(checkerboardImg, backgroundX, backgroundY);
+      ctx.fillStyle = "#f0f0f0";
+      drawRoundedRect(DESIGN_WIDTH - SIDEBAR_WIDTH, 0, SIDEBAR_WIDTH, DESIGN_HEIGHT, 0, 15, 15, 0);
+      ctx.strokeStyle = "rgb(23,23,23)"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(MAIN_AREA_WIDTH, 0); ctx.lineTo(MAIN_AREA_WIDTH, DESIGN_HEIGHT); ctx.stroke();
+      drawTitle();
+      drawInitialCircles(); drawCircles();
+      if(dragging && draggedItem) drawSelectedCircleBorder(draggedItem);
+      drawColorSwatches(); drawColorIndicator();
+      drawButton(resetButton); drawButton(resetBgButton); drawButton(deleteButton); drawButton(randomButton); drawButton(saveButton); drawButton(backgroundButton);
+      switchButtons.forEach(btn=>drawButton(btn));
+      drawButton(toggleDragButton); drawToggleButton();
+    }
+    function loop(){ draw(); requestAnimationFrame(loop); } loop();
+    function saveMainImage(){
+      let offCanvas = document.createElement("canvas"); offCanvas.width = MAIN_AREA_WIDTH; offCanvas.height = DESIGN_HEIGHT;
+      let offCtx = offCanvas.getContext("2d"); offCtx.drawImage(canvas, 0, 0, MAIN_AREA_WIDTH, DESIGN_HEIGHT, 0, 0, MAIN_AREA_WIDTH, DESIGN_HEIGHT);
+      let link = document.createElement('a'); link.download = 'SPPE.png'; link.href = offCanvas.toDataURL(); link.click();
+    }
+    canvas.addEventListener("mousedown", function(e){
+      let rect = canvas.getBoundingClientRect(), mouseX = (e.clientX - rect.left) / currentScale, mouseY = (e.clientY - rect.top) / currentScale;
+      if(mouseX >= toggleBorderButton.x && mouseX <= toggleBorderButton.x+toggleBorderButton.w && mouseY >= toggleBorderButton.y && mouseY <= toggleBorderButton.y+toggleBorderButton.h){ toggleBorderOn = !toggleBorderOn; return; }
+      if(mouseX >= toggleDragButton.x && mouseX <= toggleDragButton.x+toggleDragButton.w && mouseY >= toggleDragButton.y && mouseY <= toggleDragButton.y+toggleDragButton.h){ toggleDragEnabled = !toggleDragEnabled; toggleDragButton.label = toggleDragEnabled ? "BG Move On" : "BG Move Off"; return; }
+      for(let btn of switchButtons){ if(mouseX >= btn.x && mouseX <= btn.x+btn.w && mouseY >= btn.y && mouseY <= btn.y+btn.h){ switchToPattern(btn.patternNumber); return; } }
+      if(mouseX >= resetBgButton.x && mouseX <= resetBgButton.x+resetBgButton.w && mouseY >= resetBgButton.y && mouseY <= resetBgButton.y+resetBgButton.h){ backgroundX = 0; backgroundY = 0; return; }
+      for(let i=0;i<swatchPositions.length;i++){ let pos = swatchPositions[i]; if(mouseX>=pos.x && mouseX<=pos.x+swatchWidth && mouseY>=pos.y && mouseY<=pos.y+swatchHeight){ selectedColor = "rgb("+colorSwatches[i].join(",")+")"; currentSwatchIndex = i; return; } }
+      if(mouseX >= resetButton.x && mouseX <= resetButton.x+resetButton.w && mouseY >= resetButton.y && mouseY <= resetButton.y+resetButton.h){ circleInstances = []; return; }
+      if(mouseX >= saveButton.x && mouseX <= saveButton.x+saveButton.w && mouseY >= saveButton.y && mouseY <= saveButton.y+saveButton.h){ saveMainImage(); return; }
+      if(mouseX >= randomButton.x && mouseX <= randomButton.x+randomButton.w && mouseY >= randomButton.y && mouseY <= randomButton.y+randomButton.h){ addRandomCircles(); return; }
+      if(mouseX >= backgroundButton.x && mouseX <= backgroundButton.x+backgroundButton.w && mouseY >= backgroundButton.y && mouseY <= backgroundButton.y+backgroundButton.h){ createNewPattern(); return; }
+      let found = false;
+      function checkInitial(pos, size){ let dx = mouseX - pos.x, dy = mouseY - pos.y; if(dx*dx+dy*dy<=size*size){ let newCircle = { color: selectedColor, pos: { x: mouseX, y: mouseY }, radius: size }; circleInstances.push(newCircle); draggedItem = newCircle; dragging = true; found = true; } }
+      [initialCirclePositions, initialMediumCirclePositions, initialSmallCirclePositions].forEach(arr=>{ if(!found) arr.forEach(pos=>{ if(!found) checkInitial(pos, arr===initialSmallCirclePositions?smallCircleRadius:(arr===initialMediumCirclePositions?Math.floor(circleRadius*0.75):circleRadius)); }); });
+      if(found) return;
+      for(let i = circleInstances.length-1; i>=0; i--){ let circle = circleInstances[i], dx = mouseX - circle.pos.x, dy = mouseY - circle.pos.y; if(dx*dx+dy*dy <= circle.radius * circle.radius){ draggedItem = circle; dragging = true; offsetX = mouseX - circle.pos.x; offsetY = mouseY - circle.pos.y; return; } }
+      if(toggleDragEnabled){ dragging = true; draggedItem = null; }
+    });
+    canvas.addEventListener("mousemove", function(e){
+      let rect = canvas.getBoundingClientRect(), mouseX = (e.clientX - rect.left)/currentScale, mouseY = (e.clientY - rect.top)/currentScale;
+      if(dragging){ if(draggedItem){ draggedItem.pos.x = mouseX - offsetX; draggedItem.pos.y = mouseY - offsetY; } else if(toggleDragEnabled){ backgroundX += e.movementX/currentScale; backgroundY += e.movementY/currentScale; } }
+    });
+    canvas.addEventListener("mouseup", function(e){
+      let rect = canvas.getBoundingClientRect(), mouseX = (e.clientX - rect.left)/currentScale, mouseY = (e.clientY - rect.top)/currentScale;
+      if(dragging && draggedItem){ if(mouseX>=deleteButton.x && mouseX<=deleteButton.x+deleteButton.w && mouseY>=deleteButton.y && mouseY<=deleteButton.y+deleteButton.h){
+        let index = circleInstances.indexOf(draggedItem); if(index > -1) circleInstances.splice(index, 1);
+      } }
+      dragging = false; draggedItem = null;
+    });
+    window.addEventListener("keydown", function(e){
+      switch(e.key){
+        case "ArrowUp": backgroundY -= 200; break;
+        case "ArrowDown": backgroundY += 200; break;
+        case "ArrowLeft": backgroundX -= 10; break;
+        case "ArrowRight": backgroundX += 10; break;
+        case "f": case "F": if(draggedItem){ let index = circleInstances.indexOf(draggedItem); if(index>-1){ circleInstances.splice(index,1); circleInstances.push(draggedItem); } } break;
+        case "b": case "B": if(draggedItem){ let index = circleInstances.indexOf(draggedItem); if(index>-1){ circleInstances.splice(index,1); circleInstances.unshift(draggedItem); } } break;
+        case "n": case "N": if(draggedItem){ let index = circleInstances.indexOf(draggedItem); if(index<circleInstances.length-1){ [circleInstances[index], circleInstances[index+1]] = [circleInstances[index+1], circleInstances[index]]; } } break;
+        case "m": case "M": if(draggedItem){ let index = circleInstances.indexOf(draggedItem); if(index>0){ [circleInstances[index], circleInstances[index-1]] = [circleInstances[index-1], circleInstances[index]]; } } break;
+        case "Backspace": case "Delete": if(draggedItem){ let index = circleInstances.indexOf(draggedItem); if(index>-1){ circleInstances.splice(index,1); draggedItem = null; } } break;
+        case "l": case "L": toggleDragEnabled = !toggleDragEnabled; toggleDragButton.label = toggleDragEnabled ? "BG Move On" : "BG Move Off"; break;
+        case "s": case "S": currentSwatchIndex = (currentSwatchIndex+1)%colorSwatches.length; break;
+        case "d": case "D": toggleBorderOn = !toggleBorderOn; break;
+        case "q": case "Q": window.close(); break;
+      }
+    });
+    function scaleCanvas(){
+      const scale = window.innerHeight / DESIGN_HEIGHT;
+      currentScale = scale < 1 ? 1 : scale;
+      canvas.style.transform = 'scale(' + currentScale + ')';
+      canvas.style.transformOrigin = 'top left';
+    }
+    window.addEventListener('resize', scaleCanvas);
+    scaleCanvas();
+  </script>
+</body>
+</html>
