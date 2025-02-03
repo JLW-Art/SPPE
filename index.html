@@ -15,12 +15,13 @@
       height: 100vh;
       overflow: auto;
     }
-    /* Container to centre the canvas horizontally and align at the top */
+    /* Container to centre the canvas both horizontally and vertically */
     .canvas-container {
       display: flex;
-      align-items: flex-start;  /* Align top */
+      align-items: center;
       justify-content: center;
-      height: 100%;
+      width: 100vw;
+      height: 100vh;
     }
     /* The canvas now has rounded edges and a subtle shadow for a minimal aesthetic */
     canvas {
@@ -1355,7 +1356,6 @@
           draggedItem.pos.x = mouseX - offsetX;
           draggedItem.pos.y = mouseY - offsetY;
         } else if (toggleDragEnabled) {
-          // For simplicity, panning is not dynamically adjusted on touchmove.
           backgroundX += 0;
           backgroundY += 0;
         }
@@ -1455,17 +1455,15 @@
 
     // ------------------------------------------------------------
     // Scale the canvas to fit the screen on mobile devices.
-    // The scale factor is computed based on both width and height.
+    // Instead of using a transform, we adjust the canvas style width and height.
     // ------------------------------------------------------------
     function scaleCanvas() {
       const scaleX = window.innerWidth / DESIGN_WIDTH;
       const scaleY = window.innerHeight / DESIGN_HEIGHT;
-      // Use the smaller scale factor to ensure the entire design is visible
       const scale = Math.min(scaleX, scaleY);
       currentScale = scale;
-      canvas.style.transform = 'scale(' + currentScale + ')';
-      // Set the transform origin so that the canvas remains top left (container handles centring)
-      canvas.style.transformOrigin = 'top left';
+      canvas.style.width = (DESIGN_WIDTH * currentScale) + 'px';
+      canvas.style.height = (DESIGN_HEIGHT * currentScale) + 'px';
     }
     window.addEventListener('resize', scaleCanvas);
     scaleCanvas();
