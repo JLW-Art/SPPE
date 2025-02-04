@@ -1497,18 +1497,16 @@ if (
     // Scale the canvas to fit the screen on mobile devices.
     // Instead of using a transform, we adjust the canvas style width and height.
     // ------------------------------------------------------------
-function scaleCanvas() {
-    let scale = Math.min(window.innerWidth / DESIGN_WIDTH, window.innerHeight / DESIGN_HEIGHT);
-    if (window.innerWidth < 600) {
-        scale *= 1.2;
+    function scaleCanvas() {
+      const scaleX = window.innerWidth / DESIGN_WIDTH;
+      const scaleY = window.innerHeight / DESIGN_HEIGHT;
+      const scale = Math.min(scaleX, scaleY);
+      currentScale = scale;
+      canvas.style.width = (DESIGN_WIDTH * currentScale) + 'px';
+      canvas.style.height = (DESIGN_HEIGHT * currentScale) + 'px';
     }
-    currentScale = scale;
-    canvas.style.width = (DESIGN_WIDTH * currentScale) + 'px';
-    canvas.style.height = (DESIGN_HEIGHT * currentScale) + 'px';
-}
-window.addEventListener('resize', scaleCanvas);
-scaleCanvas();
-
+    window.addEventListener('resize', scaleCanvas);
+    scaleCanvas();
   </script>
 </body>
 </html>
