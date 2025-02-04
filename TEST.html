@@ -109,20 +109,40 @@
     // ------------------------------------------------------------
     // Colour Swatches & UI Buttons (using design coordinates)
     // ------------------------------------------------------------
-    const colorSwatches = [
-      [255, 0, 0], [255, 102, 102], [204, 0, 0], [255, 128, 128],
-      [255, 165, 0], [255, 178, 102], [255, 128, 0],
-      [255, 255, 0], [255, 255, 102], [204, 204, 0], [255, 255, 128],
-      [0, 255, 0], [102, 255, 102], [0, 204, 0], [128, 255, 128],
-      [0, 255, 255], [0, 128, 128], [102, 255, 255], [0, 204, 204],
-      [0, 0, 255], [102, 178, 255], [0, 128, 255], [128, 128, 255],
-      [102, 102, 255], [51, 51, 153], [128, 0, 128], [178, 102, 255], [102, 0, 204],
-      [255, 0, 255], [255, 192, 203], [255, 153, 204], [255, 102, 178],
-      [165, 42, 42], [128, 128, 0], [128, 128, 64], [64, 128, 128],
-      [255, 255, 255], [0, 0, 0], [192, 192, 192], [160, 160, 160],
-      [128, 128, 128], [96, 96, 96], [64, 64, 64], [32, 32, 32], [16, 16, 16],
-      [224, 224, 224], [128, 128, 160]
-    ];
+const colorSwatches = [
+  // Reds
+  [139, 0, 0], [204, 0, 0], [255, 0, 0], [255, 102, 102], [255, 128, 128],
+
+  // Oranges
+  [255, 69, 0], [255, 128, 0], [255, 165, 0], [255, 178, 102],
+
+  // Yellows
+  [255, 215, 0], [255, 255, 0], [255, 255, 102], [255, 255, 128],
+
+  // Greens
+  [0, 128, 0], [0, 255, 0], [60, 179, 113], [102, 255, 102], [128, 255, 128],
+
+  // Cyans / Turquoises
+  [0, 139, 139], [0, 204, 204], [0, 255, 255], [102, 255, 255],
+
+  // Blues
+  [0, 0, 139], [0, 0, 255], [65, 105, 225], [102, 178, 255], [102, 102, 255], [128, 128, 255],
+
+  // Purples
+  [128, 0, 128], [153, 50, 204], [138, 43, 226], [178, 102, 255],
+
+  // Pinks
+  [255, 20, 147], [255, 105, 180], [255, 182, 193],
+
+  // Browns
+  [165, 42, 42], [139, 69, 19], [128, 128, 0], [128, 128, 64],
+
+  // Neutrals (Blacks, Whites & Greys)
+  [0, 0, 0], [16, 16, 16], [32, 32, 32], [64, 64, 64], [96, 96, 96],
+  [128, 128, 128], [160, 160, 160], [192, 192, 192], [255, 255, 255]
+
+];
+
     const swatchWidth = 30, swatchHeight = 30;
     let swatchPositions = [];
     const rows = 9, cols = 6;
@@ -1055,53 +1075,62 @@
       ctx.strokeRect(pos.x, pos.y, 20, 20);
     }
 
-    function draw() {
-      ctx.clearRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
-      // Draw main drawing area (left side) with the current pattern.
-      ctx.drawImage(checkerboardImg, backgroundX, backgroundY);
-      // Draw the sidebar background with rounded right edges for a minimal look.
-      ctx.fillStyle = "#f0f0f0";
-      // Rounded only on the top-right and bottom-right corners.
-      drawRoundedRect(DESIGN_WIDTH - SIDEBAR_WIDTH, 0, SIDEBAR_WIDTH, DESIGN_HEIGHT, 0, 15, 15, 0);
-      // Draw vertical border between main area and sidebar.
-      ctx.strokeStyle = "rgb(23,23,23)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(MAIN_AREA_WIDTH, 0);
-      ctx.lineTo(MAIN_AREA_WIDTH, DESIGN_HEIGHT);
-      ctx.stroke();
+function draw() {
+  // Only clear the canvas if BG move is off.
+  if (!toggleDragEnabled) {
+   // ctx.clearRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+    // Redraw the background pattern at the current offset.
+    ctx.drawImage(checkerboardImg, backgroundX, backgroundY);
+  } else {
+    // When BG move is on, simply draw the new pattern offset on top of the old.
+    ctx.drawImage(checkerboardImg, backgroundX, backgroundY);
+  }
 
-      // Draw the SPPE by JLW text at the top of the sidebar.
-      ctx.fillStyle = "rgb(90,90,90)";
-      ctx.font = "bold 12px sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      ctx.fillText("SPPE by JLW", DESIGN_WIDTH - SIDEBAR_WIDTH/2, 10);
+  // Continue with drawing UI elements on top.
+  // Draw the sidebar background.
+  ctx.fillStyle = "#f0f0f0";
+  drawRoundedRect(DESIGN_WIDTH - SIDEBAR_WIDTH, 0, SIDEBAR_WIDTH, DESIGN_HEIGHT, 0, 15, 15, 0);
+  // Draw vertical border.
+  ctx.strokeStyle = "rgb(23,23,23)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(MAIN_AREA_WIDTH, 0);
+  ctx.lineTo(MAIN_AREA_WIDTH, DESIGN_HEIGHT);
+  ctx.stroke();
 
-      drawInitialCircles();
-      drawCircles();
-      if (dragging && draggedItem) drawSelectedCircleBorder(draggedItem);
-      drawColorSwatches();
-      drawColorIndicator();
-      drawButton(resetButton);
-      drawButton(resetBgButton);
-      // If a circle is being dragged over the delete button, override its colour to red.
-      if (dragging && draggedItem &&
-          draggedItem.pos.x >= deleteButton.x &&
-          draggedItem.pos.x <= deleteButton.x + deleteButton.w &&
-          draggedItem.pos.y >= deleteButton.y &&
-          draggedItem.pos.y <= deleteButton.y + deleteButton.h) {
-        drawButton(deleteButton, "rgb(255,0,0)");
-      } else {
-        drawButton(deleteButton);
-      }
-      drawButton(randomButton);
-      drawButton(saveButton);
-      drawButton(backgroundButton);
-      switchButtons.forEach(btn => drawButton(btn));
-      drawButton(toggleDragButton);
-      drawToggleButton();
-    }
+  // Draw the SPPE text.
+  ctx.fillStyle = "rgb(90,90,90)";
+  ctx.font = "bold 12px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillText("SPPE by JLW", DESIGN_WIDTH - SIDEBAR_WIDTH / 2, 10);
+
+  // Continue drawing circles, swatches, buttons, etc.
+  drawInitialCircles();
+  drawCircles();
+  if (dragging && draggedItem) drawSelectedCircleBorder(draggedItem);
+  drawColorSwatches();
+  drawColorIndicator();
+  drawButton(resetButton);
+  drawButton(resetBgButton);
+  // Conditionally override the delete button colour.
+  if (dragging && draggedItem &&
+      draggedItem.pos.x >= deleteButton.x &&
+      draggedItem.pos.x <= deleteButton.x + deleteButton.w &&
+      draggedItem.pos.y >= deleteButton.y &&
+      draggedItem.pos.y <= deleteButton.y + deleteButton.h) {
+    drawButton(deleteButton, "rgb(255,0,0)");
+  } else {
+    drawButton(deleteButton);
+  }
+  drawButton(randomButton);
+  drawButton(saveButton);
+  drawButton(backgroundButton);
+  switchButtons.forEach(btn => drawButton(btn));
+  drawButton(toggleDragButton);
+  drawToggleButton();
+}
+
 
     function loop() {
       draw();
