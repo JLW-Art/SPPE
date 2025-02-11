@@ -17,10 +17,10 @@
     /* Container to centre the canvas both horizontally and vertically */
     .canvas-container {
       position: absolute;
-      top: 10px;
-      right: 10px;
-      bottom: 10px;
-      left: 10px;
+      top: 5px;
+      right: 5px;
+      bottom: 5px;
+      left: 5px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -959,7 +959,7 @@
       ctx.fillStyle = "rgba(0,0,0,0)";
       ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
       ctx.fillStyle = "#666";
-      ctx.font = "30px sans-serif";
+      ctx.font = "25px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(btn.label, btn.x + btn.w/2, btn.y + btn.h/2);
@@ -978,7 +978,7 @@
       ctx.moveTo(MAIN_AREA_WIDTH, 0);
       ctx.lineTo(MAIN_AREA_WIDTH, DESIGN_HEIGHT);
       ctx.stroke();
-      ctx.font = "bold 12px Helvetica, sans-serif";
+      ctx.font = "bold 14px Helvetica, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
       ctx.fillStyle = sppeHovered ? "blue" : "rgb(110,110,110)";
