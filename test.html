@@ -1,37 +1,44 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Sticker Pack Picture Editor</title>
   <style>
-    /* Ensure the page fills the viewport */
     html, body {
       margin: 0;
       padding: 0;
       background: #333;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;  /* Hide any scrollbars in fullscreen */
-    }
-    /* Container now fills the entire viewport and centers the canvas */
-    .canvas-container {
-      position: fixed;
-      top: 0;
-      left: 0;
       width: 100vw;
       height: 100vh;
+      overflow: auto;
+    }
+    /* The container always leaves a padding around the editor */
+    .canvas-container {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      left: 0;
+      padding: 10px;  /* fixed padding on all sides */
+      box-sizing: border-box;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: #333;
+      /* For mobile we’ll allow horizontal scrolling if needed */
+      overflow-x: hidden;
     }
-    /* The canvas itself – note touch-action is disabled */
+    @media (max-width: 600px) {
+      /* On mobile the container still has padding but we allow horizontal scroll */
+      .canvas-container {
+        overflow-x: auto;
+      }
+    }
     canvas {
+      display: block;
       background: #000;
       border-radius: 10px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-      touch-action: none;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
     }
   </style>
 </head>
@@ -51,7 +58,7 @@
     const canvas = document.getElementById("gameCanvas"),
           ctx = canvas.getContext("2d");
 
-    // Helper function: Draw Rounded Rectangle
+    // Helper: Draw Rounded Rectangle
     function drawRoundedRect(x, y, width, height, radiusTL, radiusTR, radiusBR, radiusBL) {
       ctx.beginPath();
       ctx.moveTo(x + radiusTL, y);
@@ -67,7 +74,7 @@
       ctx.fill();
     }
 
-    // Pattern variables and functions (13 patterns)
+    // ----- Editor Variables and UI Element Definitions -----
     let backgroundX = 0, backgroundY = 0;
     let toggleDragEnabled = false;
     let toggleBorderOn = true;
@@ -120,10 +127,11 @@
     }
     const toggleDragButton = { x: DESIGN_WIDTH - 120, y: DESIGN_HEIGHT - 260, w: 100, h: 50, colour: "rgb(100,100,100)", label: "BG Move Off" },
           toggleBorderButton = { x: 470, y: 810, w: 80, h: 20, colour: "rgb(100,100,100)", label: "Border On" };
-    // Minimal fullscreen button design: a semi-transparent rectangle with the icon "⛶"
-    const fullscreenButton = { x: DESIGN_WIDTH - 40, y: 5, w: 30, h: 30, label: "⛶" };
+    // Minimal fullscreen button: just the brackets "[]" in dark gray
+    const fullscreenButton = { x: DESIGN_WIDTH - 40, y: 5, w: 30, h: 30, label: "[]" };
 
-    // (Pattern functions Pattern1 to Pattern13 remain unchanged.)
+    // ----- Pattern Functions (Pattern1 to Pattern13) -----
+    // (For brevity, these functions are unchanged from your original code.)
     function Pattern1(low_width, low_height) {
       let offCanvas = document.createElement("canvas");
       offCanvas.width = low_width;
@@ -618,13 +626,13 @@
         }
         ctx.putImageData(imageData, 0, 0);
       }
-      const dark_greys = [[20, 20, 20], [30, 30, 30], [40, 40, 40]],
-            dark_greens = [[50, 100, 50], [0, 60, 20], [0, 70, 30]],
-            dark_blues = [[50, 50, 50], [50, 50, 60], [20, 20, 70]],
+      const dark_greys = [[20,20,20],[30,30,30],[40,40,40]],
+            dark_greens = [[50,100,50],[0,60,20],[0,70,30]],
+            dark_blues = [[50,50,50],[50,50,60],[20,20,70]],
             background_colors = dark_greys.concat(dark_greens, dark_blues),
             background_color = background_colors[Math.floor(Math.random() * background_colors.length)];
       create_noise_background(background_color, 5, 1);
-      const a_palette = [[89, 79, 191], [204, 119, 34], [102, 153, 204], [129, 97, 131], [217, 145, 157], [156, 105, 38], [76, 153, 0]],
+      const a_palette = [[89,79,191],[204,119,34],[102,153,204],[129,97,131],[217,145,157],[156,105,38],[76,153,0]],
             triangle_color = a_palette[Math.floor(Math.random() * a_palette.length)];
       draw_fullscreen_triangles(triangle_color);
       return canvas;
@@ -685,14 +693,14 @@
       let ctx = canvas.getContext("2d");
       ctx.fillStyle = "black";
       ctx.fillRect(0, 0, low_width, low_height);
-      const background = [0, 0, 0];
-      const white = [255, 255, 255];
-      const mustard = [227, 207, 87];
-      const coral = [255, 127, 80];
-      const ultramarine = [18, 10, 143];
+      const background = [0,0,0],
+            white = [255,255,255],
+            mustard = [227,207,87],
+            coral = [255,127,80],
+            ultramarine = [18,10,143];
       function get_new_flower_pattern() {
-        let petal_color = Math.random() < 0.5 ? mustard : (Math.random() < 0.5 ? coral : ultramarine);
-        let center_color = white;
+        let petal_color = Math.random() < 0.5 ? mustard : (Math.random() < 0.5 ? coral : ultramarine),
+            center_color = white;
         return [
           [background, petal_color, background],
           [petal_color, center_color, petal_color],
@@ -718,13 +726,13 @@
         }
       }
       function get_4x4_pattern() {
-        let color = Math.random() < 0.5 ? mustard : (Math.random() < 0.5 ? coral : ultramarine);
-        let pattern_4x4 = [
-          [0, color, color, 0],
-          [color, 0, 0, color],
-          [color, 0, 0, color],
-          [0, color, color, 0]
-        ];
+        let color = Math.random() < 0.5 ? mustard : (Math.random() < 0.5 ? coral : ultramarine),
+            pattern_4x4 = [
+              [0, color, color, 0],
+              [color, 0, 0, color],
+              [color, 0, 0, color],
+              [0, color, color, 0]
+            ];
         return pattern_4x4.map(row => row.map(cell => cell === color ? color : background));
       }
       function draw_pattern(x, y, block_size, pattern) {
@@ -737,11 +745,10 @@
         }
       }
       const base_grid_spacing = Math.floor(Math.random() * (250 - 160)) + 160;
-      for (let y = 0; y < low_height; y += base_grid_spacing) {
+      for (let y = 0; y < low_width; y += base_grid_spacing) {
         for (let x = 0; x < low_width; x += base_grid_spacing) {
           if (Math.random() * 10 > 1) {
-            let pattern_choice = Math.random() < 0.5 ? "3x3" : "4x4";
-            let pattern, flower_size;
+            let pattern_choice = Math.random() < 0.5 ? "3x3" : "4x4", pattern, flower_size;
             if (pattern_choice === "3x3") {
               const sizes = [Math.floor(base_grid_spacing / 3), Math.floor(base_grid_spacing / 4), Math.floor(base_grid_spacing / 6)];
               flower_size = sizes[Math.floor(Math.random() * sizes.length)];
@@ -750,15 +757,14 @@
               flower_size = Math.floor(base_grid_spacing / 4);
               pattern = get_4x4_pattern();
             }
-            const offsetX = x + base_grid_spacing / 2 - (pattern[0].length * flower_size) / 2;
-            const offsetY = y + base_grid_spacing / 2 - (pattern.length * flower_size) / 2;
+            const offsetX = x + base_grid_spacing / 2 - (pattern[0].length * flower_size) / 2,
+                  offsetY = y + base_grid_spacing / 2 - (pattern.length * flower_size) / 2;
             draw_pattern(offsetX, offsetY, flower_size, pattern);
           }
         }
       }
       return canvas;
     }
-
     function Pattern13(surface_width, surface_height) {
       let canvas = document.createElement("canvas");
       canvas.width = surface_width;
@@ -852,7 +858,7 @@
       }
     }
 
-    // UI Drawing Functions
+    // ----- UI Drawing Functions -----
     function addRandomCircles() {
       for (let i = 0; i < 5; i++) {
         const sizes = [circleRadius, Math.floor(circleRadius * 0.75), smallCircleRadius];
@@ -950,23 +956,25 @@
       ctx.strokeStyle = "rgb(255,255,255)";
       ctx.strokeRect(pos.x, pos.y, 20, 20);
     }
-    // Minimal fullscreen button: a semi-transparent rectangle with the icon "⛶"
+    // Minimal fullscreen button: draw the brackets "[]" in dark gray (no filled square)
     function drawFullscreenButton() {
       let btn = fullscreenButton;
-      ctx.fillStyle = "rgba(0,0,0,0)";
-      ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
-      ctx.fillStyle = "#666";
-      ctx.font = "30px sans-serif";
+      ctx.strokeStyle = "#555";
+      ctx.lineWidth = 2;
+      ctx.font = "16px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(btn.label, btn.x + btn.w/2, btn.y + btn.h/2);
+      ctx.fillStyle = "#555";
+      ctx.fillText("[]", btn.x + btn.w / 2, btn.y + btn.h / 2);
     }
     function draw() {
+      // Draw the editor background pattern
       if (!toggleDragEnabled) {
         ctx.drawImage(checkerboardImg, backgroundX, backgroundY);
       } else {
         ctx.drawImage(checkerboardImg, backgroundX, backgroundY);
       }
+      // Draw sidebar background
       ctx.fillStyle = "#f0f0f0";
       drawRoundedRect(DESIGN_WIDTH - SIDEBAR_WIDTH, 0, SIDEBAR_WIDTH, DESIGN_HEIGHT, 0, 15, 15, 0);
       ctx.strokeStyle = "rgb(23,23,23)";
@@ -975,6 +983,7 @@
       ctx.moveTo(MAIN_AREA_WIDTH, 0);
       ctx.lineTo(MAIN_AREA_WIDTH, DESIGN_HEIGHT);
       ctx.stroke();
+      // Draw SPPE text link
       ctx.font = "bold 12px Helvetica, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
@@ -987,7 +996,9 @@
       drawColorIndicator();
       drawButton(resetButton);
       drawButton(resetBgButton);
-      if (dragging && draggedItem && draggedItem.pos.x >= deleteButton.x && draggedItem.pos.x <= deleteButton.x + deleteButton.w && draggedItem.pos.y >= deleteButton.y && draggedItem.pos.y <= deleteButton.y + deleteButton.h) {
+      if (dragging && draggedItem &&
+          draggedItem.pos.x >= deleteButton.x && draggedItem.pos.x <= deleteButton.x + deleteButton.w &&
+          draggedItem.pos.y >= deleteButton.y && draggedItem.pos.y <= deleteButton.y + deleteButton.h) {
         drawButton(deleteButton, "rgb(255,0,0)");
       } else {
         drawButton(deleteButton);
@@ -1018,9 +1029,8 @@
       link.click();
     }
 
-    // Unified Pointer Events
+    // ----- Unified Pointer Events -----
     canvas.addEventListener("pointerdown", function(e) {
-      e.preventDefault();
       canvas.setPointerCapture(e.pointerId);
       const rect = canvas.getBoundingClientRect(),
             mouseX = (e.clientX - rect.left) / currentScale,
@@ -1171,7 +1181,6 @@
     });
 
     canvas.addEventListener("pointermove", function(e) {
-      e.preventDefault();
       const rect = canvas.getBoundingClientRect(),
             mouseX = (e.clientX - rect.left) / currentScale,
             mouseY = (e.clientY - rect.top) / currentScale;
@@ -1310,15 +1319,29 @@
       }
     });
 
+    // ----- Responsive Scaling -----
     function scaleCanvas() {
-      // Use the canvas container dimensions (which now fill the viewport)
-      const containerRect = canvas.parentElement.getBoundingClientRect(),
-            scaleX = containerRect.width / DESIGN_WIDTH,
-            scaleY = containerRect.height / DESIGN_HEIGHT,
-            scale = Math.min(scaleX, scaleY);
-      currentScale = scale;
-      canvas.style.width = (DESIGN_WIDTH * currentScale) + "px";
-      canvas.style.height = (DESIGN_HEIGHT * currentScale) + "px";
+      const containerRect = canvas.parentElement.getBoundingClientRect();
+      // On mobile, fill the container vertically so the editor touches closer to top/bottom.
+      if (window.innerWidth < 600) {
+        // Use full available container height (which is window height minus container padding)
+        currentScale = containerRect.height / DESIGN_HEIGHT;
+        canvas.style.width = (DESIGN_WIDTH * currentScale) + "px";
+        canvas.style.height = (DESIGN_HEIGHT * currentScale) + "px";
+        // Add fixed horizontal margins so there is at least 10px of space at the sides (if visible)
+        canvas.style.marginLeft = "10px";
+        canvas.style.marginRight = "10px";
+        // Allow horizontal scrolling if needed
+        canvas.parentElement.style.overflowX = "auto";
+      } else {
+        // For larger screens, scale so that the entire canvas is visible.
+        currentScale = Math.min(containerRect.width / DESIGN_WIDTH, containerRect.height / DESIGN_HEIGHT);
+        canvas.style.width = (DESIGN_WIDTH * currentScale) + "px";
+        canvas.style.height = (DESIGN_HEIGHT * currentScale) + "px";
+        canvas.style.marginLeft = "0";
+        canvas.style.marginRight = "0";
+        canvas.parentElement.style.overflowX = "hidden";
+      }
     }
     window.addEventListener("resize", scaleCanvas);
     scaleCanvas();
