@@ -5,37 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sticker Pack Picture Editor</title>
   <style>
-    /* Remove default margins and allow scrolling if needed */
+    /* Ensure the page fills the viewport */
     html, body {
       margin: 0;
       padding: 0;
       background: #333;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;  /* Hide any scrollbars in fullscreen */
+    }
+    /* Container now fills the entire viewport and centers the canvas */
+    .canvas-container {
+      position: fixed;
+      top: 0;
+      left: 0;
       width: 100vw;
       height: 100vh;
-      overflow: auto;
-    }
-    /* Container to centre the canvas both horizontally and vertically */
-    .canvas-container {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      bottom: 10px;
-      left: 10px;
       display: flex;
       align-items: center;
       justify-content: center;
+      background: #333;
     }
-    /* The canvas now has rounded edges and a subtle shadow for a minimal aesthetic.
-       The key fix is the addition of "touch-action: none" to disable the default
-       touch scrolling/zooming gestures on touch screens. */
+    /* The canvas itself – note touch-action is disabled */
     canvas {
-      max-width: 100%;
-      height: auto;
-      display: block;
       background: #000;
       border-radius: 10px;
       box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-      touch-action: none;  /* <--- Added to prevent touch scrolling */
+      touch-action: none;
     }
   </style>
 </head>
@@ -124,7 +120,7 @@
     }
     const toggleDragButton = { x: DESIGN_WIDTH - 120, y: DESIGN_HEIGHT - 260, w: 100, h: 50, colour: "rgb(100,100,100)", label: "BG Move Off" },
           toggleBorderButton = { x: 470, y: 810, w: 80, h: 20, colour: "rgb(100,100,100)", label: "Border On" };
-    // Minimal fullscreen button design: a simple semi-transparent rectangle with the icon "⛶"
+    // Minimal fullscreen button design: a semi-transparent rectangle with the icon "⛶"
     const fullscreenButton = { x: DESIGN_WIDTH - 40, y: 5, w: 30, h: 30, label: "⛶" };
 
     // (Pattern functions Pattern1 to Pattern13 remain unchanged.)
@@ -762,6 +758,7 @@
       }
       return canvas;
     }
+
     function Pattern13(surface_width, surface_height) {
       let canvas = document.createElement("canvas");
       canvas.width = surface_width;
@@ -953,7 +950,7 @@
       ctx.strokeStyle = "rgb(255,255,255)";
       ctx.strokeRect(pos.x, pos.y, 20, 20);
     }
-    // Minimal fullscreen button: a simple semi-transparent rectangle with the icon "⛶"
+    // Minimal fullscreen button: a semi-transparent rectangle with the icon "⛶"
     function drawFullscreenButton() {
       let btn = fullscreenButton;
       ctx.fillStyle = "rgba(0,0,0,0)";
@@ -1023,7 +1020,7 @@
 
     // Unified Pointer Events
     canvas.addEventListener("pointerdown", function(e) {
-      e.preventDefault();  // Prevent default touch behaviors
+      e.preventDefault();
       canvas.setPointerCapture(e.pointerId);
       const rect = canvas.getBoundingClientRect(),
             mouseX = (e.clientX - rect.left) / currentScale,
@@ -1174,7 +1171,7 @@
     });
 
     canvas.addEventListener("pointermove", function(e) {
-      e.preventDefault();  // Prevent default touch behaviors
+      e.preventDefault();
       const rect = canvas.getBoundingClientRect(),
             mouseX = (e.clientX - rect.left) / currentScale,
             mouseY = (e.clientY - rect.top) / currentScale;
@@ -1314,6 +1311,7 @@
     });
 
     function scaleCanvas() {
+      // Use the canvas container dimensions (which now fill the viewport)
       const containerRect = canvas.parentElement.getBoundingClientRect(),
             scaleX = containerRect.width / DESIGN_WIDTH,
             scaleY = containerRect.height / DESIGN_HEIGHT,
