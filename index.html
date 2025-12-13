@@ -21,6 +21,53 @@
       align-items:center;
       justify-content:center;
     }
+
+    /* PDF wizard modal */
+    .modalOverlay{
+      position:fixed; inset:0;
+      background:rgba(0,0,0,0.6);
+      display:flex; align-items:center; justify-content:center;
+      z-index:9999;
+    }
+    .modalBox{
+      width:min(520px, 92vw);
+      background:#222;
+      color:#fff;
+      border-radius:12px;
+      padding:16px;
+      box-shadow:0 10px 30px rgba(0,0,0,0.45);
+      font-family:sans-serif;
+    }
+    .modalBox h3{ margin:0 0 10px 0; font-size:16px; }
+    .modalBox p{ margin:0 0 10px 0; font-size:12px; color:#ccc; line-height:1.4; }
+    .modalBox input, .modalBox textarea, .modalBox select{
+      width:100%;
+      box-sizing:border-box;
+      padding:10px;
+      border-radius:8px;
+      border:1px solid #444;
+      background:#111;
+      color:#fff;
+      font-size:14px;
+    }
+    .modalBox textarea{ min-height:90px; resize:vertical; }
+    .modalActions{
+      display:flex;
+      gap:8px;
+      justify-content:flex-end;
+      margin-top:12px;
+    }
+    .modalBtn{
+      border:0;
+      border-radius:8px;
+      padding:10px 12px;
+      background:#555;
+      color:#fff;
+      cursor:pointer;
+      font-size:13px;
+    }
+    .modalBtn.primary{ background:#2e7dff; }
+    .modalBtn:disabled{ opacity:0.5; cursor:not-allowed; }
   </style>
   <!-- jsPDF for zine PDF export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -76,6 +123,137 @@
         initialMediumCirclePositions = [{x:521,y:350}],
         initialCirclePositions = [{x:618,y:350}];
 
+  /* ---- DRAW MODE (PAINT WITH SHAPES) ---- */
+  let drawMode = false;
+  let isDrawing = false;
+  let drawLastX = 0;
+  let drawLastY = 0;
+
+  // Brush size tracks the last "selected" size (template size clicked or existing shape clicked)
+  let currentBrushRadius = circleRadius;
+
+  // NEW: persistent selection for resize buttons
+  let selectedItem = null;
+
+  function pointInMainArea(x,y){
+    return (x >= 0 && x <= MAIN_AREA_WIDTH && y >= 0 && y <= DESIGN_HEIGHT);
+  }
+
+  function addStampAt(x,y){
+    const shp = getCurrentShape();
+    const stamp = {
+      shape: shp,
+      color: selectedColor,
+      pos: { x, y },
+      radius: currentBrushRadius
+    };
+    circleInstances.push(stamp);
+    // In draw mode, we don't force-select stamps; keep selection as-is
+    return stamp;
+  }
+
+  function stampLine(x0,y0,x1,y1){
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const step = Math.max(6, Math.floor(currentBrushRadius * 0.5));
+    const steps = Math.max(1, Math.floor(dist / step));
+    for(let i=1;i<=steps;i++){
+      const t = i / steps;
+      const x = x0 + dx * t;
+      const y = y0 + dy * t;
+      addStampAt(x,y);
+    }
+  }
+
+  /* ---- UNDO HISTORY ---- */
+  const MAX_HISTORY = 20;
+  let historyStack = [];
+
+  function saveState(){
+    const circlesCopy = circleInstances.map(o => ({
+      shape: o.shape,
+      color: o.color,
+      pos: { x: o.pos.x, y: o.pos.y },
+      radius: o.radius
+    }));
+    const zinePagesCopy = zinePages.map(p => ({
+      dataUrl: p.dataUrl,
+      img: p.img
+    }));
+    historyStack.push({
+      backgroundX,
+      backgroundY,
+      toggleDragEnabled,
+      toggleBorderOn,
+      currentSwatchIndex,
+      selectedColor,
+      circleInstances: circlesCopy,
+      currentPatternFunction,
+      checkerboardImg,
+      zinePages: zinePagesCopy,
+      zineTitle,
+      selectedZineIndex,
+      currentShapeIdx,
+      currentPatternIndex,
+      patternScrollY,
+      zinePreviewIndex,
+      drawMode,
+      currentBrushRadius
+    });
+    if(historyStack.length > MAX_HISTORY){
+      historyStack.shift();
+    }
+  }
+
+  function undoLastAction(){
+    if(historyStack.length === 0) return;
+    const state = historyStack.pop();
+    backgroundX = state.backgroundX;
+    backgroundY = state.backgroundY;
+    toggleDragEnabled = state.toggleDragEnabled;
+    toggleBorderOn = state.toggleBorderOn;
+    currentSwatchIndex = state.currentSwatchIndex;
+    selectedColor = state.selectedColor;
+    circleInstances = state.circleInstances.map(o => ({
+      shape: o.shape,
+      color: o.color,
+      pos: { x: o.pos.x, y: o.pos.y },
+      radius: o.radius
+    }));
+    currentPatternFunction = state.currentPatternFunction;
+    checkerboardImg = state.checkerboardImg;
+    zinePages = state.zinePages.map(p => ({
+      dataUrl: p.dataUrl,
+      img: p.img
+    }));
+    zineTitle = state.zineTitle;
+    selectedZineIndex = state.selectedZineIndex;
+    currentShapeIdx = state.currentShapeIdx;
+    toggleDragButton.label = toggleDragEnabled ? "BG Move On" : "BG Move Off";
+    currentPatternIndex = (typeof state.currentPatternIndex === "number")
+      ? state.currentPatternIndex
+      : patternFunctions.indexOf(currentPatternFunction);
+    patternScrollY = (typeof state.patternScrollY === "number") ? state.patternScrollY : 0;
+
+    zinePreviewIndex = (typeof state.zinePreviewIndex === "number") ? state.zinePreviewIndex : -1;
+    if(zinePreviewIndex >= 0 && zinePreviewIndex < zinePages.length){
+      setZinePreview(zinePreviewIndex);
+    }else{
+      setZinePreview(-1);
+    }
+
+    drawMode = !!state.drawMode;
+    currentBrushRadius = (typeof state.currentBrushRadius === "number") ? state.currentBrushRadius : circleRadius;
+
+    // NEW: clear selection on undo to avoid stale references
+    selectedItem = null;
+    dragging = false;
+    draggedItem = null;
+
+    clampPatternScroll();
+  }
+
   /* ---- COLOUR SWATCHES ---- */
   const colorSwatches = [
           [200,0,0],[255,80,80],[139,0,0],[255,128,0],
@@ -115,6 +293,23 @@
   let selectedZineIndex = -1;
   let zineTitle = "";
 
+  /* ---- ZINE PREVIEW */
+  let zinePreviewIndex = -1;
+  let zinePreviewImg = null;
+
+  function setZinePreview(idx){
+    if(idx >= 0 && idx < zinePages.length){
+      zinePreviewIndex = idx;
+      zinePreviewImg = zinePages[idx].img;
+      if(zinePreviewImg && !zinePreviewImg.complete){
+        zinePreviewImg.onload = () => { /* draw loop picks it up */ };
+      }
+    }else{
+      zinePreviewIndex = -1;
+      zinePreviewImg = null;
+    }
+  }
+
   const zineAddButton = {
     x: ZINE_PANEL_X + 5,
     y: ZINE_PANEL_Y + 4,
@@ -130,9 +325,17 @@
     label: "PDF"
   };
 
+  // NEW: Delete button
+  const zineDelButton = {
+    x: ZINE_PANEL_X + 5,
+    y: ZINE_PANEL_Y + 4 + (ZINE_BUTTON_HEIGHT + 3) * 2,
+    w: ZINE_PANEL_WIDTH - 10,
+    h: ZINE_BUTTON_HEIGHT,
+    label: "Del"
+  };
+
   function drawZinePanel(){
     ctx.save();
-    // panel background
     ctx.fillStyle = "rgb(40,40,40)";
     drawRoundedRect(ZINE_PANEL_X,ZINE_PANEL_Y,ZINE_PANEL_WIDTH,ZINE_PANEL_HEIGHT,6,6,6,6);
 
@@ -158,18 +361,29 @@
                  zinePdfButton.x + zinePdfButton.w/2,
                  zinePdfButton.y + zinePdfButton.h/2);
 
+    // NEW: Delete button
+    ctx.fillStyle = "rgb(90,90,90)";
+    drawRoundedRect(zineDelButton.x,zineDelButton.y,zineDelButton.w,zineDelButton.h,4,4,4,4);
+    ctx.fillStyle = "white";
+    ctx.font = "9px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(zineDelButton.label,
+                 zineDelButton.x + zineDelButton.w/2,
+                 zineDelButton.y + zineDelButton.h/2);
+
     // page count
     ctx.fillStyle = "rgb(200,200,200)";
     ctx.font = "8px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    const countY = ZINE_PANEL_Y + 4 + ZINE_BUTTON_HEIGHT * 2 + 4;
+    const countY = ZINE_PANEL_Y + 4 + (ZINE_BUTTON_HEIGHT + 3) * 3 + 1; // NEW: *3 (Add/PDF/Del)
     ctx.fillText(`${zinePages.length}/${ZINE_MAX_PAGES}`,
                  ZINE_PANEL_X + ZINE_PANEL_WIDTH/2,
                  countY);
 
     // thumbnails (max 4, no scroll)
-    const thumbsTop = countY + 8;
+    const thumbsTop = countY + 10;
     for(let i=0;i<zinePages.length && i<ZINE_MAX_PAGES;i++){
       const thumbX = ZINE_PANEL_X + 5;
       const thumbY = thumbsTop + i * (ZINE_THUMB_H + ZINE_THUMB_MARGIN);
@@ -213,10 +427,19 @@
       ctx.textBaseline = "middle";
       ctx.fillText(String(i+1), thumbX+6, thumbY+5);
 
+      // Selected highlight
       if (i === selectedZineIndex){
         ctx.strokeStyle = "rgb(255,255,0)";
         ctx.lineWidth = 2;
         ctx.strokeRect(thumbX-1,thumbY-1,ZINE_THUMB_W+2,ZINE_THUMB_H+2);
+        ctx.lineWidth = 1;
+      }
+
+      // Preview highlight (cyan)
+      if (i === zinePreviewIndex){
+        ctx.strokeStyle = "rgb(0,255,255)";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(thumbX+1,thumbY+1,ZINE_THUMB_W-2,ZINE_THUMB_H-2);
         ctx.lineWidth = 1;
       }
     }
@@ -231,12 +454,45 @@
 
   const shapeButton = {
     x: DESIGN_WIDTH-230,
-    y: DESIGN_HEIGHT-240,
+    y: DESIGN_HEIGHT-260,
     w: 100,
-    h: 30,
+    h: 50,
     colour:"rgb(100,100,100)",
     label:"Shape"
   };
+
+  // NEW: Size +/- buttons (adjust current brush size and selected shape size)
+  const sizeMinusButton = {
+    x: DESIGN_WIDTH-245,
+    y: DESIGN_HEIGHT-545,
+    w: 25,
+    h: 25,
+    colour:"rgb(100,100,100)",
+    label:"-"
+  };
+  const sizePlusButton = {
+    x: DESIGN_WIDTH-297 + 52,
+    y: DESIGN_HEIGHT-460,
+    w: 25,
+    h: 25,
+    colour:"rgb(100,100,100)",
+    label:"+"
+  };
+
+  const BRUSH_MIN = 2;
+  const BRUSH_MAX = 80;
+  function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+  function adjustSize(delta){
+    saveState();
+    const next = clamp(currentBrushRadius + delta, BRUSH_MIN, BRUSH_MAX);
+    currentBrushRadius = next;
+
+    // If a shape is selected, resize it too
+    if(selectedItem && typeof selectedItem.radius === "number"){
+      selectedItem.radius = next;
+    }
+  }
 
   function drawShape(shape,x,y,r,colour){
     ctx.save();
@@ -405,7 +661,7 @@
     return inside;
   }
 
-  /* ---- PATTERNS ---- (as before) */
+  /* ---- PATTERNS ---- */
   function Pattern1(low_width,low_height){
     let offCanvas = document.createElement("canvas");
     offCanvas.width = low_width;
@@ -1088,6 +1344,7 @@
     Pattern1,Pattern2,Pattern3,Pattern4,Pattern5,Pattern6,Pattern7,
     Pattern8,Pattern9,Pattern10,Pattern11,Pattern12,Pattern13
   ];
+
   let currentPatternFunction = patternFunctions[Math.floor(Math.random()*patternFunctions.length)],
       checkerboardImg = currentPatternFunction(MAIN_AREA_WIDTH,DESIGN_HEIGHT);
 
@@ -1097,8 +1354,224 @@
   function switchToPattern(patternNumber){
     if(patternNumber>=1 && patternNumber<=patternFunctions.length){
       currentPatternFunction=patternFunctions[patternNumber-1];
+      currentPatternIndex = patternNumber-1;
       checkerboardImg=currentPatternFunction(MAIN_AREA_WIDTH,DESIGN_HEIGHT);
     }
+  }
+
+  /* ---- PATTERN THUMB STRIP (AUTO-FIT + 2 COLS) ---- */
+  let PAT_PANEL = {
+    x: DESIGN_WIDTH - 230,
+    y: 300,
+    w: 210,
+    h: 200
+  };
+
+  const PAT_COLS = 2;
+  const PAT_THUMB_PAD = 10;
+  const PAT_INNER_PAD = 10;
+  const PAT_HEADER_H = 18;
+
+  const PAT_THUMB_SRC = 96;  // generate thumbs at this size once
+  let patThumbDraw = 80;     // actual drawn size (auto-fit)
+  let patternThumbs = [];
+
+  let currentPatternIndex = patternFunctions.indexOf(currentPatternFunction);
+  let patternScrollY = 0;
+
+  let patTracking = false;
+  let patStartY = 0;
+  let patStartScrollY = 0;
+  let patMoved = false;
+  let patStartX = 0;
+
+  function autoLayoutPatternPanel(){
+    // Top: just below swatches (and zine panel area)
+    const swatchesBottom = 40 + rows * (swatchHeight + 20);
+    const top = swatchesBottom + 10;
+
+    // Bottom: keep clear of the first button that lives in this lower area
+    const bottomLimit = Math.min(
+      toggleDragButton.y,
+      shapeButton.y,
+      deleteButton.y,
+      backgroundButton.y,
+      randomButton.y,
+      undoButton.y,
+      resetButton.y,
+      resetBgButton.y,
+      saveButton.y
+    ) - 10;
+
+    PAT_PANEL.y = top;
+
+    // If something unexpected happens, keep a minimum height
+    PAT_PANEL.h = Math.max(120, bottomLimit - top);
+
+    // Compute draw-size so 2 columns fit nicely
+    const innerW = PAT_PANEL.w - PAT_INNER_PAD*2;
+    const maxSizeThatFits = Math.floor((innerW - (PAT_COLS - 1) * PAT_THUMB_PAD) / PAT_COLS);
+    patThumbDraw = Math.max(56, Math.min(PAT_THUMB_SRC, maxSizeThatFits));
+
+    clampPatternScroll();
+  }
+
+  function buildPatternThumbs(){
+    // One-time previews (each pattern is random; these are just visual cues)
+    patternThumbs = patternFunctions.map(fn => fn(PAT_THUMB_SRC, PAT_THUMB_SRC));
+  }
+
+  function getPatListHeight(){
+    const rowsCount = Math.ceil(patternFunctions.length / PAT_COLS);
+    if(rowsCount <= 0) return 0;
+    return rowsCount * patThumbDraw + (rowsCount - 1) * PAT_THUMB_PAD;
+  }
+
+  function clampPatternScroll(){
+    const innerH = PAT_PANEL.h - PAT_HEADER_H - PAT_INNER_PAD*2;
+    const contentH = getPatListHeight();
+    const minScroll = Math.min(0, innerH - contentH);
+    const maxScroll = 0;
+    if(patternScrollY < minScroll) patternScrollY = minScroll;
+    if(patternScrollY > maxScroll) patternScrollY = maxScroll;
+  }
+
+  function drawPatternPicker(){
+    ctx.save();
+    ctx.fillStyle = "rgb(40,40,40)";
+    drawRoundedRect(PAT_PANEL.x, PAT_PANEL.y, PAT_PANEL.w, PAT_PANEL.h, 10,10,10,10);
+
+    // Header
+    ctx.fillStyle = "rgb(210,210,210)";
+    ctx.font = "14px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillText("Patterns", PAT_PANEL.x + PAT_INNER_PAD, PAT_PANEL.y + 4);
+
+    const innerX = PAT_PANEL.x + PAT_INNER_PAD;
+    const innerY = PAT_PANEL.y + PAT_HEADER_H + PAT_INNER_PAD;
+    const innerW = PAT_PANEL.w - PAT_INNER_PAD*2;
+    const innerH = PAT_PANEL.h - PAT_HEADER_H - PAT_INNER_PAD*2;
+
+    // Clip scrolling area
+    ctx.beginPath();
+    ctx.rect(innerX, innerY, innerW, innerH);
+    ctx.clip();
+
+    // Center a 2-col grid inside innerW
+    const gridW = PAT_COLS * patThumbDraw + (PAT_COLS - 1) * PAT_THUMB_PAD;
+    const startX = innerX + Math.floor((innerW - gridW) / 2);
+
+    for(let i=0;i<patternThumbs.length;i++){
+      const col = i % PAT_COLS;
+      const row = Math.floor(i / PAT_COLS);
+
+      const tx = startX + col * (patThumbDraw + PAT_THUMB_PAD);
+      const ty = innerY + patternScrollY + row * (patThumbDraw + PAT_THUMB_PAD);
+
+      if(ty + patThumbDraw < innerY - 5) continue;
+      if(ty > innerY + innerH + 5) continue;
+
+      // Frame
+      ctx.fillStyle = "rgb(25,25,25)";
+      ctx.fillRect(tx-2, ty-2, patThumbDraw+4, patThumbDraw+4);
+
+      // Preview (scaled)
+      const thumb = patternThumbs[i];
+      if(thumb){
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(thumb, tx, ty, patThumbDraw, patThumbDraw);
+      }
+
+      // Index tag
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(tx, ty, 18, 14);
+      ctx.fillStyle = "white";
+      ctx.font = "10px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(i+1), tx+9, ty+7);
+
+      // Highlight selected
+      if(i === currentPatternIndex){
+        ctx.strokeStyle = "rgb(255,255,0)";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(tx-2, ty-2, patThumbDraw+4, patThumbDraw+4);
+        ctx.lineWidth = 1;
+      }else{
+        ctx.strokeStyle = "rgb(80,80,80)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(tx-2, ty-2, patThumbDraw+4, patThumbDraw+4);
+      }
+    }
+
+    ctx.restore();
+
+    // Scrollbar hint
+    const contentH = getPatListHeight();
+    if(contentH > innerH){
+      const innerX2 = PAT_PANEL.x + PAT_INNER_PAD;
+      const innerY2 = PAT_PANEL.y + PAT_HEADER_H + PAT_INNER_PAD;
+      const innerH2 = PAT_PANEL.h - PAT_HEADER_H - PAT_INNER_PAD*2;
+
+      const trackX = PAT_PANEL.x + PAT_PANEL.w - 8;
+      const trackY = innerY2;
+      const trackH = innerH2;
+
+      const maxScroll = 0;
+      const minScroll = innerH2 - contentH;
+
+      const t = (patternScrollY - maxScroll) / (minScroll - maxScroll); // 0..1
+      const handleH = Math.max(22, Math.floor(trackH * (innerH2 / contentH)));
+      const handleY = trackY + Math.floor((trackH - handleH) * t);
+
+      ctx.save();
+      ctx.fillStyle = "rgba(255,255,255,0.15)";
+      ctx.fillRect(trackX, trackY, 4, trackH);
+      ctx.fillStyle = "rgba(255,255,255,0.35)";
+      ctx.fillRect(trackX, handleY, 4, handleH);
+      ctx.restore();
+    }
+  }
+
+  function pointInPatPanel(x,y){
+    return (x>=PAT_PANEL.x && x<=PAT_PANEL.x+PAT_PANEL.w &&
+            y>=PAT_PANEL.y && y<=PAT_PANEL.y+PAT_PANEL.h);
+  }
+
+  function patIndexFromPoint(x,y){
+    const innerX = PAT_PANEL.x + PAT_INNER_PAD;
+    const innerY = PAT_PANEL.y + PAT_HEADER_H + PAT_INNER_PAD;
+    const innerW = PAT_PANEL.w - PAT_INNER_PAD*2;
+    const innerH = PAT_PANEL.h - PAT_HEADER_H - PAT_INNER_PAD*2;
+
+    if(!(x>=innerX && x<=innerX+innerW && y>=innerY && y<=innerY+innerH)) return -1;
+
+    const gridW = PAT_COLS * patThumbDraw + (PAT_COLS - 1) * PAT_THUMB_PAD;
+    const startX = innerX + Math.floor((innerW - gridW) / 2);
+
+    const localX = x - startX;
+    const localY = (y - innerY) - patternScrollY;
+
+    if(localX < 0 || localX > gridW) return -1;
+    if(localY < 0) return -1;
+
+    const stepX = patThumbDraw + PAT_THUMB_PAD;
+    const stepY = patThumbDraw + PAT_THUMB_PAD;
+
+    const col = Math.floor(localX / stepX);
+    const row = Math.floor(localY / stepY);
+
+    if(col < 0 || col >= PAT_COLS) return -1;
+
+    const inThumbX = (localX % stepX) <= patThumbDraw;
+    const inThumbY = (localY % stepY) <= patThumbDraw;
+    if(!inThumbX || !inThumbY) return -1;
+
+    const idx = row * PAT_COLS + col;
+    if(idx < 0 || idx >= patternFunctions.length) return -1;
+
+    return idx;
   }
 
   function addRandomCircles(){
@@ -1121,15 +1594,17 @@
       drawRoundedRect(pos.x,pos.y,swatchWidth,swatchHeight,3,3,3,3);
     }
   }
+
   function drawButton(btn,overrideColour){
     ctx.fillStyle = overrideColour || btn.colour;
     drawRoundedRect(btn.x,btn.y,btn.w,btn.h,5,5,5,5);
     ctx.fillStyle = "rgb(255,255,255)";
-    ctx.font = "16px sans-serif";
+    ctx.font = (btn.h <= 22) ? "10px sans-serif" : "16px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(btn.label,btn.x+btn.w/2,btn.y+btn.h/2);
   }
+
   const toggleDragButton = {
     x:DESIGN_WIDTH-120,y:DESIGN_HEIGHT-260,w:100,h:50,
     colour:"rgb(100,100,100)",label:"BG Move Off"
@@ -1138,6 +1613,7 @@
     x:470,y:810,w:80,h:20,
     colour:"rgb(100,100,100)",label:"Border On"
   };
+
   function drawToggleButton(){
     ctx.fillStyle = toggleBorderOn ? "rgb(0,200,0)" : "rgb(100,100,100)";
     drawRoundedRect(toggleBorderButton.x,toggleBorderButton.y,
@@ -1174,6 +1650,7 @@
   }
   function drawSelectedCircleBorder(item){
     if(!toggleBorderOn) return;
+    if(!item) return;
     ctx.save();
     let col=colorSwatches[currentSwatchIndex];
     ctx.strokeStyle=`rgb(${col[0]},${col[1]},${col[2]})`;
@@ -1192,30 +1669,32 @@
 
   resetButton = {x:DESIGN_WIDTH-120,y:DESIGN_HEIGHT-110,w:50,h:50,colour:"rgb(100,100,100)",label:"RC"};
   resetBgButton = {x:DESIGN_WIDTH-70,y:DESIGN_HEIGHT-110,w:50,h:50,colour:"rgb(100,100,100)",label:"RBG"};
-  deleteButton = {x:DESIGN_WIDTH-230,y:DESIGN_HEIGHT-210,w:100,h:180,colour:"rgb(100,100,100)",label:"Delete"};
+  deleteButton = {x:DESIGN_WIDTH-230,y:DESIGN_HEIGHT-210,w:100,h:150,colour:"rgb(100,100,100)",label:"Delete"};
   randomButton = {x:DESIGN_WIDTH-120,y:DESIGN_HEIGHT-210,w:100,h:50,colour:"rgb(100,100,100)",label:"Random"};
   saveButton   = {x:DESIGN_WIDTH-120,y:DESIGN_HEIGHT-60,w:100,h:50,colour:"rgb(100,100,100)",label:"Save"};
   printButton  = {x:DESIGN_WIDTH-60,y:DESIGN_HEIGHT-830,w:50,h:20,colour:"rgb(100,100,100)",label:"Print"};
-  backgroundButton = {x:DESIGN_WIDTH-120,y:DESIGN_HEIGHT-160,w:100,h:50,colour:"rgb(100,100,100)",label:"New BG"};
 
-  let switchButtons = [],
-      firstColumnX = DESIGN_WIDTH-230,
-      secondColumnX = DESIGN_WIDTH-120,
-      baseY = DESIGN_HEIGHT-420;
-  for(let i=1;i<=13;i++){
-    let col=(i%2===1)?firstColumnX:secondColumnX,
-        idx=Math.floor((i-1)/2),
-        y=baseY+idx*25;
-    switchButtons.push({
-      x:col,y:y,w:100,h:20,
-      colour:"rgb(100,100,100)",
-      label:"Pattern "+i,
-      patternNumber:i
-    });
-  }
+  // Small Draw button next to Print
+  const drawModeButton = {
+    x: (DESIGN_WIDTH-60) - 55,
+    y: DESIGN_HEIGHT-830,
+    w: 50,
+    h: 20,
+    colour:"rgb(100,100,100)",
+    label:"Draw"
+  };
+
+  backgroundButton = {x:DESIGN_WIDTH-120,y:DESIGN_HEIGHT-160,w:100,h:50,colour:"rgb(100,100,100)",label:"New BG"};
+  undoButton   = {x:DESIGN_WIDTH-230,y:DESIGN_HEIGHT-60,w:100,h:30,colour:"rgb(100,100,100)",label:"Undo"};
 
   function draw(){
-    ctx.drawImage(checkerboardImg,backgroundX,backgroundY);
+    // If a zine page is selected for preview, show it in the main area
+    if(zinePreviewImg && zinePreviewImg.complete){
+      ctx.drawImage(zinePreviewImg, 0, 0, MAIN_AREA_WIDTH, DESIGN_HEIGHT);
+    }else{
+      ctx.drawImage(checkerboardImg,backgroundX,backgroundY);
+    }
+
     ctx.fillStyle="#f0f0f0";
     drawRoundedRect(DESIGN_WIDTH-SIDEBAR_WIDTH,0,SIDEBAR_WIDTH,DESIGN_HEIGHT,0,15,15,0);
     ctx.fillStyle="rgb(23,23,23)";
@@ -1224,16 +1703,25 @@
     ctx.font="bold 12px Helvetica, sans-serif";
     ctx.textAlign="center";
     ctx.textBaseline="top";
-    ctx.fillText("SPPE v3 by JLW",DESIGN_WIDTH-SIDEBAR_WIDTH/1.3,15);
+    ctx.fillText("SPPE v4.1 by JLW",DESIGN_WIDTH-SIDEBAR_WIDTH/1.3,15);
 
     drawInitialCircles();
     drawCircles();
-    if(dragging && draggedItem)drawSelectedCircleBorder(draggedItem);
+
+    // NEW: show selection border even when not dragging
+    if(selectedItem) drawSelectedCircleBorder(selectedItem);
+    if(dragging && draggedItem) drawSelectedCircleBorder(draggedItem);
 
     drawColorSwatches();
     drawColorIndicator();
+
+    // Auto-fit panel each frame (so it never overlaps buttons)
+    autoLayoutPatternPanel();
+    drawPatternPicker();
+
     drawButton(resetButton);
     drawButton(resetBgButton);
+
     if(dragging && draggedItem &&
        draggedItem.pos.x>=deleteButton.x &&
        draggedItem.pos.x<=deleteButton.x+deleteButton.w &&
@@ -1243,16 +1731,33 @@
     }else{
       drawButton(deleteButton);
     }
+
     drawButton(randomButton);
     drawButton(saveButton);
     drawButton(backgroundButton);
-    switchButtons.forEach(btn=>drawButton(btn));
+    drawButton(undoButton);
+    drawButton(drawModeButton, drawMode ? "rgb(0,160,0)" : drawModeButton.colour);
     drawButton(printButton);
     drawButton(toggleDragButton);
-    drawButton(shapeButton);
-    drawToggleButton();
 
-    // zine panel
+    // NEW: size controls + little readout
+    drawButton(sizeMinusButton);
+    drawButton(sizePlusButton);
+    ctx.save();
+    ctx.fillStyle = "rgb(80,80,80)";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(
+      `Size: ${Math.round(currentBrushRadius)}`,
+      sizeMinusButton.x + 30,   // → move right
+      sizeMinusButton.y + 100    // ↓ move down
+    );
+    ctx.restore();
+
+    drawButton(shapeButton);
+
+    drawToggleButton();
     drawZinePanel();
   }
 
@@ -1260,6 +1765,10 @@
     draw();
     requestAnimationFrame(loop);
   }
+
+  // Build thumbs once, then start loop
+  buildPatternThumbs();
+  autoLayoutPatternPanel();
   loop();
 
   /* RENDER MAIN AREA FOR SAVE/PRINT/ZINE */
@@ -1301,15 +1810,17 @@
     return offCanvas.toDataURL("image/jpeg",0.95);
   }
 
-  // If a thumbnail is selected, Add replaces that page; otherwise Add appends (up to 4)
   function addPageToZine(){
+    saveState();
     const dataUrl=captureMainImageForZine();
     const img=new Image();
     img.src=dataUrl;
 
     if(selectedZineIndex>=0 && selectedZineIndex<zinePages.length){
-      // replace the currently selected page
       zinePages[selectedZineIndex]={dataUrl,img};
+      if(zinePreviewIndex === selectedZineIndex){
+        setZinePreview(selectedZineIndex);
+      }
     }else{
       if(zinePages.length>=ZINE_MAX_PAGES){
         alert("4 Page Max");
@@ -1319,7 +1830,30 @@
     }
   }
 
-  // overlay text helper: each word on its own line, max 5 lines, 45pt
+  // NEW: delete a zine page (safe selection/preview handling + undo)
+  function deleteZinePage(idx){
+    if(idx < 0 || idx >= zinePages.length) return;
+
+    saveState();
+    zinePages.splice(idx, 1);
+
+    // Fix selection
+    if(selectedZineIndex === idx) selectedZineIndex = -1;
+    else if(selectedZineIndex > idx) selectedZineIndex--;
+
+    // Fix preview
+    if(zinePreviewIndex === idx){
+      if(zinePages.length === 0){
+        setZinePreview(-1);
+      }else{
+        const next = Math.min(idx, zinePages.length - 1);
+        setZinePreview(next);
+      }
+    }else if(zinePreviewIndex > idx){
+      setZinePreview(zinePreviewIndex - 1);
+    }
+  }
+
   function addOverlayText(pdf,text,xImg,yImg,wImg,hImg,textColor){
     if(!text) return;
     const words=text.trim().split(/\s+/).slice(0,5);
@@ -1336,7 +1870,150 @@
     });
   }
 
-  function downloadZinePDF(){
+  function openPdfWizard(initialTitle){
+    return new Promise((resolve)=>{
+      const state = {
+        step: 0,
+        title: initialTitle || "",
+        backText: "",
+        titleColour: "black",
+        backColour: "black"
+      };
+
+      const overlay = document.createElement("div");
+      overlay.className = "modalOverlay";
+
+      const box = document.createElement("div");
+      box.className = "modalBox";
+
+      const titleEl = document.createElement("h3");
+      const helpEl = document.createElement("p");
+
+      const fieldWrap = document.createElement("div");
+
+      const actions = document.createElement("div");
+      actions.className = "modalActions";
+
+      const cancelBtn = document.createElement("button");
+      cancelBtn.className = "modalBtn";
+      cancelBtn.textContent = "Cancel";
+
+      const backBtn = document.createElement("button");
+      backBtn.className = "modalBtn";
+      backBtn.textContent = "Back";
+
+      const nextBtn = document.createElement("button");
+      nextBtn.className = "modalBtn primary";
+      nextBtn.textContent = "Next";
+
+      actions.appendChild(cancelBtn);
+      actions.appendChild(backBtn);
+      actions.appendChild(nextBtn);
+
+      box.appendChild(titleEl);
+      box.appendChild(helpEl);
+      box.appendChild(fieldWrap);
+      box.appendChild(actions);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      function cleanup(result){
+        document.removeEventListener("keydown", onKey);
+        overlay.remove();
+        resolve(result);
+      }
+
+      function onKey(e){
+        if(e.key === "Escape") cleanup(null);
+      }
+      document.addEventListener("keydown", onKey);
+
+      function renderStep(){
+        fieldWrap.innerHTML = "";
+        backBtn.disabled = (state.step === 0);
+
+        if(state.step === 0){
+          titleEl.textContent = "PDF Step 1/4 — Zine title";
+          helpEl.textContent = "Up to 5 words. Each word becomes a line on the front page + used for filename.";
+          const inp = document.createElement("input");
+          inp.value = state.title;
+          inp.placeholder = "e.g. Wavy Patterns";
+          inp.oninput = () => state.title = inp.value;
+          fieldWrap.appendChild(inp);
+          nextBtn.textContent = "Next";
+          setTimeout(()=>inp.focus(),0);
+        }
+        else if(state.step === 1){
+          titleEl.textContent = "PDF Step 2/4 — Back page text";
+          helpEl.textContent = "Each word becomes a line on the back page.";
+          const ta = document.createElement("textarea");
+          ta.value = state.backText;
+          ta.placeholder = "e.g. THANK YOU / 2025";
+          ta.oninput = () => state.backText = ta.value;
+          fieldWrap.appendChild(ta);
+          nextBtn.textContent = "Next";
+          setTimeout(()=>ta.focus(),0);
+        }
+        else if(state.step === 2){
+          titleEl.textContent = "PDF Step 3/4 — Title text colour";
+          helpEl.textContent = "Choose black or white for the front page title.";
+          const sel = document.createElement("select");
+          ["black","white"].forEach(v=>{
+            const o=document.createElement("option");
+            o.value=v; o.textContent=v;
+            sel.appendChild(o);
+          });
+          sel.value = state.titleColour;
+          sel.onchange = () => state.titleColour = sel.value;
+          fieldWrap.appendChild(sel);
+          nextBtn.textContent = "Next";
+          setTimeout(()=>sel.focus(),0);
+        }
+        else{
+          titleEl.textContent = "PDF Step 4/4 — Back text colour";
+          helpEl.textContent = "Choose black or white for the back page text.";
+          const sel = document.createElement("select");
+          ["black","white"].forEach(v=>{
+            const o=document.createElement("option");
+            o.value=v; o.textContent=v;
+            sel.appendChild(o);
+          });
+          sel.value = state.backColour;
+          sel.onchange = () => state.backColour = sel.value;
+          fieldWrap.appendChild(sel);
+          nextBtn.textContent = "Generate PDF";
+          setTimeout(()=>sel.focus(),0);
+        }
+      }
+
+      cancelBtn.onclick = () => cleanup(null);
+
+      backBtn.onclick = () => {
+        if(state.step > 0){
+          state.step--;
+          renderStep();
+        }
+      };
+
+      nextBtn.onclick = () => {
+        if(state.step < 3){
+          state.step++;
+          renderStep();
+        }else{
+          cleanup({
+            title: (state.title || "").trim(),
+            backText: (state.backText || "").trim(),
+            titleColour: state.titleColour,
+            backColour: state.backColour
+          });
+        }
+      };
+
+      renderStep();
+    });
+  }
+
+  async function downloadZinePDF(){
     if(zinePages.length===0){
       alert("No pages in the zine yet. Add at least one page first.");
       return;
@@ -1346,37 +2023,14 @@
       return;
     }
 
-    // Title prompt, with cancel -> ESCAPE WITHOUT SAVING/MAKING PDF
-    const titleInput=prompt("Zine title (5 lines max/each word will be its own line/used on front + filename):",zineTitle || "");
-    if(titleInput===null){
-      // user hit Cancel -> exit without generating PDF or changing title
-      return;
-    }
-    zineTitle=titleInput.trim();
+    const wizardResult = await openPdfWizard(zineTitle || "");
+    if(!wizardResult) return;
 
-    // Back text prompt, cancel should also ESCAPE
-    const backTextPrompt=prompt("Text for back page (each word will be its own line):","");
-    if(backTextPrompt===null){
-      // user cancelled -> exit without generating PDF
-      return;
-    }
-    const backText = backTextPrompt.trim();
+    zineTitle = wizardResult.title;
+    const backText = wizardResult.backText;
 
-    // Title colour prompt, cancel = escape
-    let titleColourChoice=prompt("Title text colour – type 'black' or 'white' (front page):","black");
-    if(titleColourChoice===null){
-      return;
-    }
-    titleColourChoice=(titleColourChoice || "black").trim().toLowerCase();
-    const titleTextColor = (titleColourChoice === "white") ? [255,255,255] : [0,0,0];
-
-    // Back colour prompt, cancel = escape
-    let backColourChoice=prompt("Back text colour – type 'black' or 'white' (back page):","black");
-    if(backColourChoice===null){
-      return;
-    }
-    backColourChoice=(backColourChoice || "black").trim().toLowerCase();
-    const backTextColor = (backColourChoice === "white") ? [255,255,255] : [0,0,0];
+    const titleTextColor = (wizardResult.titleColour === "white") ? [255,255,255] : [0,0,0];
+    const backTextColor  = (wizardResult.backColour  === "white") ? [255,255,255] : [0,0,0];
 
     const { jsPDF } = window.jspdf;
     const pdf=new jsPDF({orientation:"portrait",unit:"pt",format:"a4"});
@@ -1409,9 +2063,6 @@
       }
     });
 
-    // filename logic:
-    // if user named the zine -> use title
-    // if not -> use time+date and SPPE_ZINE
     let baseName;
     if(zineTitle && zineTitle.length>0){
       baseName = zineTitle
@@ -1426,7 +2077,6 @@
     pdf.save(baseName + ".pdf");
   }
 
-  /* ---- ZINE INPUT HANDLING (no scrolling) ---- */
   function handleZineClick(mouseX,mouseY){
     if(!(mouseX>=ZINE_PANEL_X && mouseX<=ZINE_PANEL_X+ZINE_PANEL_WIDTH &&
          mouseY>=ZINE_PANEL_Y && mouseY<=ZINE_PANEL_Y+ZINE_PANEL_HEIGHT)){
@@ -1445,31 +2095,91 @@
       return true;
     }
 
-    const countY = ZINE_PANEL_Y + 4 + ZINE_BUTTON_HEIGHT*2 + 4;
-    const thumbsTop = countY + 8;
+    // NEW: delete button handling
+    if(mouseX>=zineDelButton.x && mouseX<=zineDelButton.x+zineDelButton.w &&
+       mouseY>=zineDelButton.y && mouseY<=zineDelButton.y+zineDelButton.h){
+
+      if(zinePages.length === 0){
+        alert("No pages to delete.");
+        return true;
+      }
+
+      // Prefer deleting selected page, otherwise delete previewed page
+      const target =
+        (selectedZineIndex >= 0) ? selectedZineIndex :
+        (zinePreviewIndex >= 0) ? zinePreviewIndex :
+        -1;
+
+      if(target === -1){
+        alert("Tap a thumbnail first.");
+        return true;
+      }
+
+      if(confirm(`Delete page ${target+1}?`)){
+        deleteZinePage(target);
+      }
+      return true;
+    }
+
+    const countY = ZINE_PANEL_Y + 4 + (ZINE_BUTTON_HEIGHT + 3) * 3 + 1; // NEW: *3
+    const thumbsTop = countY + 10;
 
     if(mouseY>=thumbsTop){
       const relY = mouseY - thumbsTop;
       const perThumb = ZINE_THUMB_H + ZINE_THUMB_MARGIN;
       const idx = Math.floor(relY / perThumb);
       if(idx>=0 && idx<zinePages.length && idx<ZINE_MAX_PAGES){
+        saveState();
         if(selectedZineIndex === -1){
-          // first click selects
           selectedZineIndex = idx;
+          setZinePreview(idx);
         }else if(selectedZineIndex === idx){
-          // clicking the same deselects
           selectedZineIndex = -1;
+          setZinePreview(-1);
         }else{
-          // clicking a different thumbnail swaps pages for reordering
           const tmp = zinePages[selectedZineIndex];
           zinePages[selectedZineIndex] = zinePages[idx];
           zinePages[idx] = tmp;
           selectedZineIndex = -1;
+          setZinePreview(-1);
         }
         return true;
       }
     }
     return false;
+  }
+
+  /* ---- PATTERN PICKER INPUT ---- */
+  function handlePatternMouseDown(mouseX,mouseY){
+    if(!pointInPatPanel(mouseX,mouseY)) return false;
+    patTracking = true;
+    patStartY = mouseY;
+    patStartX = mouseX;
+    patStartScrollY = patternScrollY;
+    patMoved = false;
+    return true;
+  }
+
+  function handlePatternMouseMove(mouseX,mouseY){
+    if(!patTracking) return false;
+    const dy = mouseY - patStartY;
+    if(Math.abs(dy) > 2) patMoved = true;
+    patternScrollY = patStartScrollY + dy;
+    clampPatternScroll();
+    return true;
+  }
+
+  function handlePatternMouseUp(mouseX,mouseY){
+    if(!patTracking) return false;
+    if(!patMoved){
+      const idx = patIndexFromPoint(mouseX,mouseY);
+      if(idx !== -1){
+        saveState();
+        switchToPattern(idx+1);
+      }
+    }
+    patTracking = false;
+    return true;
   }
 
   /* ---- MOUSE / TOUCH EVENTS ---- */
@@ -1479,39 +2189,62 @@
     const mouseY=(e.clientY-rect.top)/currentScale;
 
     if(handleZineClick(mouseX,mouseY)) return;
+    if(handlePatternMouseDown(mouseX,mouseY)) return;
 
-    if(mouseX>=(DESIGN_WIDTH-SIDEBAR_WIDTH/2-50)&&mouseX<=(DESIGN_WIDTH-SIDEBAR_WIDTH/2+50)&&mouseY>=10&&mouseY<=26){
+    if(mouseX>=(DESIGN_WIDTH-SIDEBAR_WIDTH/2-50)&&mouseX<=(DESIGN_WIDTH-SIDEBAR_WIDTH/2+-20)&&mouseY>=10&&mouseY<=26){
       window.open("https://jlw.kleio.com","_blank");return;
     }
     if(mouseX>=toggleBorderButton.x&&mouseX<=toggleBorderButton.x+toggleBorderButton.w&&mouseY>=toggleBorderButton.y&&mouseY<=toggleBorderButton.y+toggleBorderButton.h){
+      saveState();
       toggleBorderOn=!toggleBorderOn;return;
     }
+
+    // NEW: size +/- clicks
+    if(mouseX>=sizeMinusButton.x&&mouseX<=sizeMinusButton.x+sizeMinusButton.w&&mouseY>=sizeMinusButton.y&&mouseY<=sizeMinusButton.y+sizeMinusButton.h){
+      adjustSize(-5);
+      return;
+    }
+    if(mouseX>=sizePlusButton.x&&mouseX<=sizePlusButton.x+sizePlusButton.w&&mouseY>=sizePlusButton.y&&mouseY<=sizePlusButton.y+sizePlusButton.h){
+      adjustSize(+5);
+      return;
+    }
+
     if(mouseX>=toggleDragButton.x&&mouseX<=toggleDragButton.x+toggleDragButton.w&&mouseY>=toggleDragButton.y&&mouseY<=toggleDragButton.y+toggleDragButton.h){
+      saveState();
       toggleDragEnabled=!toggleDragEnabled;
       toggleDragButton.label=toggleDragEnabled?"BG Move On":"BG Move Off";
       return;
     }
+
+    if(mouseX>=drawModeButton.x&&mouseX<=drawModeButton.x+drawModeButton.w&&mouseY>=drawModeButton.y&&mouseY<=drawModeButton.y+drawModeButton.h){
+      saveState();
+      drawMode = !drawMode;
+      return;
+    }
+
     if(mouseX>=shapeButton.x&&mouseX<=shapeButton.x+shapeButton.w&&mouseY>=shapeButton.y&&mouseY<=shapeButton.y+shapeButton.h){
+      saveState();
       currentShapeIdx=(currentShapeIdx+1)%shapeTypes.length;return;
     }
-    for(let btn of switchButtons){
-      if(mouseX>=btn.x&&mouseX<=btn.x+btn.w&&mouseY>=btn.y&&mouseY<=btn.y+btn.h){
-        switchToPattern(btn.patternNumber);return;
-      }
-    }
+
     if(mouseX>=resetBgButton.x&&mouseX<=resetBgButton.x+resetBgButton.w&&mouseY>=resetBgButton.y&&mouseY<=resetBgButton.y+resetBgButton.h){
+      saveState();
       backgroundX=0;backgroundY=0;return;
     }
     for(let i=0;i<swatchPositions.length;i++){
       let pos=swatchPositions[i];
       if(mouseX>=pos.x&&mouseX<=pos.x+swatchWidth&&mouseY>=pos.y&&mouseY<=pos.y+swatchHeight){
+        saveState();
         selectedColor="rgb("+colorSwatches[i].join(",")+")";
         currentSwatchIndex=i;
         return;
       }
     }
     if(mouseX>=resetButton.x&&mouseX<=resetButton.x+resetButton.w&&mouseY>=resetButton.y&&mouseY<=resetButton.y+resetButton.h){
-      circleInstances=[];return;
+      saveState();
+      circleInstances=[];
+      selectedItem=null;
+      return;
     }
     if(mouseX>=saveButton.x&&mouseX<=saveButton.x+saveButton.w&&mouseY>=saveButton.y&&mouseY<=saveButton.y+saveButton.h){
       saveMainImage();return;
@@ -1520,18 +2253,43 @@
       printMainImage();return;
     }
     if(mouseX>=randomButton.x&&mouseX<=randomButton.x+randomButton.w&&mouseY>=randomButton.y&&mouseY<=randomButton.y+randomButton.h){
+      saveState();
       addRandomCircles();return;
     }
     if(mouseX>=backgroundButton.x&&mouseX<=backgroundButton.x+backgroundButton.w&&mouseY>=backgroundButton.y&&mouseY<=backgroundButton.y+backgroundButton.h){
+      saveState();
       createNewPattern();return;
+    }
+    if(mouseX>=undoButton.x&&mouseX<=undoButton.x+undoButton.w&&mouseY>=undoButton.y&&mouseY<=undoButton.y+undoButton.h){
+      undoLastAction();return;
+    }
+
+    // DRAW MODE: click & drag paints stamps in main area
+    if(drawMode && pointInMainArea(mouseX,mouseY)){
+      saveState(); // one undo state per stroke
+      isDrawing = true;
+      drawLastX = mouseX;
+      drawLastY = mouseY;
+      addStampAt(mouseX,mouseY);
+      return;
     }
 
     let found=false;
+    let stateSavedForThisClick=false;
+    function ensureStateSaved(){
+      if(!stateSavedForThisClick){
+        saveState();
+        stateSavedForThisClick=true;
+      }
+    }
     function checkInitial(pos,size){
       if(isPointInShape(getCurrentShape(),pos.x,pos.y,size,mouseX,mouseY)){
+        ensureStateSaved();
+        currentBrushRadius = size;
         const newCircle={shape:getCurrentShape(),color:selectedColor,pos:{x:mouseX,y:mouseY},radius:size};
         circleInstances.push(newCircle);
         draggedItem=newCircle;
+        selectedItem=newCircle; // NEW
         dragging=true;
         found=true;
       }
@@ -1548,7 +2306,10 @@
     for(let i=circleInstances.length-1;i>=0;i--){
       const item=circleInstances[i];
       if(isPointInShape(item.shape||"circle",item.pos.x,item.pos.y,item.radius,mouseX,mouseY)){
+        ensureStateSaved();
+        currentBrushRadius = item.radius;
         draggedItem=item;
+        selectedItem=item; // NEW
         dragging=true;
         offsetX=mouseX-item.pos.x;
         offsetY=mouseY-item.pos.y;
@@ -1556,6 +2317,7 @@
       }
     }
     if(toggleDragEnabled){
+      ensureStateSaved();
       dragging=true;
       draggedItem=null;
     }
@@ -1565,6 +2327,21 @@
     const rect=canvas.getBoundingClientRect();
     const mouseX=(e.clientX-rect.left)/currentScale;
     const mouseY=(e.clientY-rect.top)/currentScale;
+
+    if(patTracking){
+      handlePatternMouseMove(mouseX,mouseY);
+      return;
+    }
+
+    if(isDrawing){
+      if(pointInMainArea(mouseX,mouseY)){
+        stampLine(drawLastX, drawLastY, mouseX, mouseY);
+        drawLastX = mouseX;
+        drawLastY = mouseY;
+      }
+      return;
+    }
+
     if(dragging){
       if(draggedItem){
         draggedItem.pos.x=mouseX-offsetX;
@@ -1580,15 +2357,40 @@
     const rect=canvas.getBoundingClientRect();
     const mouseX=(e.clientX-rect.left)/currentScale;
     const mouseY=(e.clientY-rect.top)/currentScale;
+
+    if(patTracking){
+      handlePatternMouseUp(mouseX,mouseY);
+      return;
+    }
+
+    if(isDrawing){
+      isDrawing = false;
+      return;
+    }
+
     if(dragging && draggedItem){
       if(mouseX>=deleteButton.x&&mouseX<=deleteButton.x+deleteButton.w&&mouseY>=deleteButton.y&&mouseY<=deleteButton.y+deleteButton.h){
+        saveState();
         const index=circleInstances.indexOf(draggedItem);
-        if(index>-1)circleInstances.splice(index,1);
+        if(index>-1) circleInstances.splice(index,1);
+        if(selectedItem === draggedItem) selectedItem = null; // NEW
       }
     }
     dragging=false;
     draggedItem=null;
   });
+
+  // Mouse wheel scroll for pattern panel
+  canvas.addEventListener("wheel", function(e){
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = (e.clientX-rect.left)/currentScale;
+    const mouseY = (e.clientY-rect.top)/currentScale;
+    if(pointInPatPanel(mouseX,mouseY)){
+      e.preventDefault();
+      patternScrollY += -e.deltaY * 0.6;
+      clampPatternScroll();
+    }
+  }, {passive:false});
 
   canvas.addEventListener("touchstart",function(e){
     e.preventDefault();
@@ -1599,35 +2401,67 @@
 
     if(handleZineClick(mouseX,mouseY))return;
 
+    // Pattern picker touch tracking
+    if(pointInPatPanel(mouseX,mouseY)){
+      patTracking = true;
+      patStartY = mouseY;
+      patStartX = mouseX;
+      patStartScrollY = patternScrollY;
+      patMoved = false;
+      return;
+    }
+
     if(mouseX>=toggleBorderButton.x&&mouseX<=toggleBorderButton.x+toggleBorderButton.w&&mouseY>=toggleBorderButton.y&&mouseY<=toggleBorderButton.y+toggleBorderButton.h){
+      saveState();
       toggleBorderOn=!toggleBorderOn;return;
     }
+
+    // NEW: size +/- touch
+    if(mouseX>=sizeMinusButton.x&&mouseX<=sizeMinusButton.x+sizeMinusButton.w&&mouseY>=sizeMinusButton.y&&mouseY<=sizeMinusButton.y+sizeMinusButton.h){
+      adjustSize(-5);
+      return;
+    }
+    if(mouseX>=sizePlusButton.x&&mouseX<=sizePlusButton.x+sizePlusButton.w&&mouseY>=sizePlusButton.y&&mouseY<=sizePlusButton.y+sizePlusButton.h){
+      adjustSize(+5);
+      return;
+    }
+
     if(mouseX>=toggleDragButton.x&&mouseX<=toggleDragButton.x+toggleDragButton.w&&mouseY>=toggleDragButton.y&&mouseY<=toggleDragButton.y+toggleDragButton.h){
+      saveState();
       toggleDragEnabled=!toggleDragEnabled;
       toggleDragButton.label=toggleDragEnabled?"BG Move On":"BG Move Off";
       return;
     }
+
+    if(mouseX>=drawModeButton.x&&mouseX<=drawModeButton.x+drawModeButton.w&&mouseY>=drawModeButton.y&&mouseY<=drawModeButton.y+drawModeButton.h){
+      saveState();
+      drawMode = !drawMode;
+      return;
+    }
+
     if(mouseX>=shapeButton.x&&mouseX<=shapeButton.x+shapeButton.w&&mouseY>=shapeButton.y&&mouseY<=shapeButton.y+shapeButton.h){
+      saveState();
       currentShapeIdx=(currentShapeIdx+1)%shapeTypes.length;return;
     }
-    for(let btn of switchButtons){
-      if(mouseX>=btn.x&&mouseX<=btn.x+btn.w&&mouseY>=btn.y&&mouseY<=btn.y+btn.h){
-        switchToPattern(btn.patternNumber);return;
-      }
-    }
+
     if(mouseX>=resetBgButton.x&&mouseX<=resetBgButton.x+resetBgButton.w&&mouseY>=resetBgButton.y&&mouseY<=resetBgButton.y+resetBgButton.h){
+      saveState();
       backgroundX=0;backgroundY=0;return;
     }
     for(let i=0;i<swatchPositions.length;i++){
       let pos=swatchPositions[i];
       if(mouseX>=pos.x&&mouseX<=pos.x+swatchWidth&&mouseY>=pos.y&&mouseY<=pos.y+swatchHeight){
+        saveState();
         selectedColor="rgb("+colorSwatches[i].join(",")+")";
         currentSwatchIndex=i;
         return;
       }
     }
     if(mouseX>=resetButton.x&&mouseX<=resetButton.x+resetButton.w&&mouseY>=resetButton.y&&mouseY<=resetButton.y+resetButton.h){
-      circleInstances=[];return;
+      saveState();
+      circleInstances=[];
+      selectedItem=null;
+      return;
     }
     if(mouseX>=saveButton.x&&mouseX<=saveButton.x+saveButton.w&&mouseY>=saveButton.y&&mouseY<=saveButton.y+saveButton.h){
       saveMainImage();return;
@@ -1636,18 +2470,43 @@
       printMainImage();return;
     }
     if(mouseX>=randomButton.x&&mouseX<=randomButton.x+randomButton.w&&mouseY>=randomButton.y&&mouseY<=randomButton.y+randomButton.h){
+      saveState();
       addRandomCircles();return;
     }
     if(mouseX>=backgroundButton.x&&mouseX<=backgroundButton.x+backgroundButton.w&&mouseY>=backgroundButton.y&&mouseY<=backgroundButton.y+backgroundButton.h){
+      saveState();
       createNewPattern();return;
+    }
+    if(mouseX>=undoButton.x&&mouseX<=undoButton.x+undoButton.w&&mouseY>=undoButton.y&&mouseY<=undoButton.y+undoButton.h){
+      undoLastAction();return;
+    }
+
+    // DRAW MODE: touch paints stamps in main area
+    if(drawMode && pointInMainArea(mouseX,mouseY)){
+      saveState(); // one undo state per stroke
+      isDrawing = true;
+      drawLastX = mouseX;
+      drawLastY = mouseY;
+      addStampAt(mouseX,mouseY);
+      return;
     }
 
     let found=false;
+    let stateSavedForThisClick=false;
+    function ensureStateSaved(){
+      if(!stateSavedForThisClick){
+        saveState();
+        stateSavedForThisClick=true;
+      }
+    }
     function checkInitial(pos,size){
       if(isPointInShape(getCurrentShape(),pos.x,pos.y,size,mouseX,mouseY)){
+        ensureStateSaved();
+        currentBrushRadius = size;
         const newCircle={shape:getCurrentShape(),color:selectedColor,pos:{x:mouseX,y:mouseY},radius:size};
         circleInstances.push(newCircle);
         draggedItem=newCircle;
+        selectedItem=newCircle; // NEW
         dragging=true;
         found=true;
       }
@@ -1664,7 +2523,10 @@
     for(let i=circleInstances.length-1;i>=0;i--){
       const item=circleInstances[i];
       if(isPointInShape(item.shape||"circle",item.pos.x,item.pos.y,item.radius,mouseX,mouseY)){
+        ensureStateSaved();
+        currentBrushRadius = item.radius;
         draggedItem=item;
+        selectedItem=item; // NEW
         dragging=true;
         offsetX=mouseX-item.pos.x;
         offsetY=mouseY-item.pos.y;
@@ -1672,6 +2534,7 @@
       }
     }
     if(toggleDragEnabled){
+      ensureStateSaved();
       dragging=true;
       draggedItem=null;
       lastTouchX=mouseX;
@@ -1685,6 +2548,25 @@
     const rect=canvas.getBoundingClientRect();
     const mouseX=(touch.clientX-rect.left)/currentScale;
     const mouseY=(touch.clientY-rect.top)/currentScale;
+
+    // Pattern panel scroll
+    if(patTracking){
+      const dy = mouseY - patStartY;
+      if(Math.abs(dy) > 3) patMoved = true;
+      patternScrollY = patStartScrollY + dy;
+      clampPatternScroll();
+      return;
+    }
+
+    if(isDrawing){
+      if(pointInMainArea(mouseX,mouseY)){
+        stampLine(drawLastX, drawLastY, mouseX, mouseY);
+        drawLastX = mouseX;
+        drawLastY = mouseY;
+      }
+      return;
+    }
+
     if(dragging){
       if(draggedItem){
         draggedItem.pos.x=mouseX-offsetX;
@@ -1708,10 +2590,31 @@
     const rect=canvas.getBoundingClientRect();
     const mouseX=(touch.clientX-rect.left)/currentScale;
     const mouseY=(touch.clientY-rect.top)/currentScale;
+
+    // Pattern panel tap-to-select if it wasn’t a scroll
+    if(patTracking){
+      if(!patMoved){
+        const idx = patIndexFromPoint(mouseX,mouseY);
+        if(idx !== -1){
+          saveState();
+          switchToPattern(idx+1);
+        }
+      }
+      patTracking = false;
+      return;
+    }
+
+    if(isDrawing){
+      isDrawing = false;
+      return;
+    }
+
     if(dragging && draggedItem){
       if(mouseX>=deleteButton.x&&mouseX<=deleteButton.x+deleteButton.w&&mouseY>=deleteButton.y&&mouseY<=deleteButton.y+deleteButton.h){
+        saveState();
         const index=circleInstances.indexOf(draggedItem);
         if(index>-1)circleInstances.splice(index,1);
+        if(selectedItem === draggedItem) selectedItem = null; // NEW
       }
     }
     dragging=false;
@@ -1722,12 +2625,21 @@
 
   window.addEventListener("keydown",function(e){
     switch(e.key){
-      case "ArrowUp":backgroundY-=200;break;
-      case "ArrowDown":backgroundY+=200;break;
-      case "ArrowLeft":backgroundX-=10;break;
-      case "ArrowRight":backgroundX+=10;break;
+      case "ArrowUp":
+        saveState();
+        backgroundY-=200;break;
+      case "ArrowDown":
+        saveState();
+        backgroundY+=200;break;
+      case "ArrowLeft":
+        saveState();
+        backgroundX-=10;break;
+      case "ArrowRight":
+        saveState();
+        backgroundX+=10;break;
       case "f":case "F":
         if(draggedItem){
+          saveState();
           const index=circleInstances.indexOf(draggedItem);
           if(index>-1){
             circleInstances.splice(index,1);
@@ -1737,6 +2649,7 @@
         break;
       case "b":case "B":
         if(draggedItem){
+          saveState();
           const index=circleInstances.indexOf(draggedItem);
           if(index>-1){
             circleInstances.splice(index,1);
@@ -1747,7 +2660,8 @@
       case "n":case "N":
         if(draggedItem){
           const index=circleInstances.indexOf(draggedItem);
-          if(index<circleInstances.length-1){
+          if(index>-1 && index<circleInstances.length-1){
+            saveState();
             [circleInstances[index],circleInstances[index+1]]=[circleInstances[index+1],circleInstances[index]];
           }
         }
@@ -1756,31 +2670,58 @@
         if(draggedItem){
           const index=circleInstances.indexOf(draggedItem);
           if(index>0){
+            saveState();
             [circleInstances[index],circleInstances[index-1]]=[circleInstances[index-1],circleInstances[index]];
           }
         }
         break;
       case "Backspace":case "Delete":
         if(draggedItem){
+          saveState();
           const index=circleInstances.indexOf(draggedItem);
           if(index>-1){
             circleInstances.splice(index,1);
+            if(selectedItem === draggedItem) selectedItem = null; // NEW
             draggedItem=null;
           }
         }
         break;
       case "l":case "L":
+        saveState();
         toggleDragEnabled=!toggleDragEnabled;
         toggleDragButton.label=toggleDragEnabled?"BG Move On":"BG Move Off";
         break;
       case "s":case "S":
+        saveState();
         currentSwatchIndex=(currentSwatchIndex+1)%colorSwatches.length;
+        selectedColor="rgb("+colorSwatches[currentSwatchIndex].join(",")+")";
         break;
       case "d":case "D":
+        saveState();
         toggleBorderOn=!toggleBorderOn;
+        break;
+      case "p":case "P":
+        saveState();
+        drawMode = !drawMode;
         break;
       case "q":case "Q":
         window.close();
+        break;
+      case "z":case "Z":
+        if(e.ctrlKey || e.metaKey){
+          e.preventDefault();
+          undoLastAction();
+        }
+        break;
+
+      // NEW: keyboard +/- size (optional but handy)
+      case "+":
+      case "=":
+        adjustSize(+5);
+        break;
+      case "-":
+      case "_":
+        adjustSize(-5);
         break;
     }
   });
